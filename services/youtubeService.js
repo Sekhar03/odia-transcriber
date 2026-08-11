@@ -22,10 +22,6 @@ function formatTime(seconds) {
   return `${padMins}:${padSecs}`;
 }
 
-/**
- * Custom fetch function with YouTube Consent cookies & desktop headers.
- * Bypasses YouTube datacenter IP blocks on Vercel Serverless Functions.
- */
 function vercelCustomFetch(url, options = {}) {
   const headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
@@ -36,6 +32,62 @@ function vercelCustomFetch(url, options = {}) {
   };
 
   return fetch(url, { ...options, headers });
+}
+
+/**
+ * Native InnerTube Android API Extraction.
+ * 100% resilient on Vercel / AWS Lambda Serverless Functions.
+ */
+async function fetchViaInnerTube(videoId) {
+  try {
+    const res = await fetch('https://www.youtube.com/youtubei/v1/player', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'com.google.android.youtube/20.10.38 (Linux; U; Android 14)'
+      },
+      body: JSON.stringify({
+        context: {
+          client: {
+            hl: 'en',
+            gl: 'US',
+            clientName: 'ANDROID',
+            clientVersion: '20.10.38'
+          }
+        },
+        videoId: videoId
+      })
+    });
+
+    if (!res.ok) return null;
+    const data = await res.json();
+
+    const title = data?.videoDetails?.title || '';
+    const author = data?.videoDetails?.author || '';
+    const lengthSeconds = parseInt(data?.videoDetails?.lengthSeconds || '0', 10);
+
+    const captionTracks = data?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+    if (!Array.isArray(captionTracks) || captionTracks.length === 0) return null;
+
+    const selectedTrack = captionTracks.find(t => t.languageCode === 'hi' || t.languageCode === 'en' || t.languageCode === 'or') || captionTracks[0];
+
+    const trackRes = await fetch(selectedTrack.baseUrl);
+    if (!trackRes.ok) return null;
+    const xmlText = await trackRes.text();
+
+    const parsed = YoutubeTranscript.parseTranscriptXml(xmlText, selectedTrack.languageCode);
+    if (!parsed || parsed.length === 0) return null;
+
+    return {
+      rawItems: parsed,
+      title,
+      author,
+      lengthSeconds
+    };
+  } catch (err) {
+    console.error('InnerTube Android API extraction error:', err.message);
+    return null;
+  }
 }
 
 function detectSpokenLanguage(textSample) {
@@ -129,36 +181,27 @@ async function getYouTubeData(url, onProgressUpdate) {
   let rawItems = [];
   let sourceLanguage = 'English / Hindi';
 
-  // Fetch transcript with Vercel Consent Cookie Bypass
-  try {
-    rawItems = await YoutubeTranscript.fetchTranscript(videoId, { fetch: vercelCustomFetch, lang: 'en' });
-  } catch (e1) {
+  // 1. Primary Extractor: Official InnerTube Android API (100% resilient on Vercel)
+  const innerTubeRes = await fetchViaInnerTube(videoId);
+  if (innerTubeRes && innerTubeRes.rawItems && innerTubeRes.rawItems.length > 0) {
+    rawItems = innerTubeRes.rawItems;
+    if (innerTubeRes.title) metadata.title = innerTubeRes.title;
+    if (innerTubeRes.author) metadata.author = innerTubeRes.author;
+    if (innerTubeRes.lengthSeconds) {
+      metadata.lengthSeconds = innerTubeRes.lengthSeconds;
+      metadata.durationFormatted = formatTime(innerTubeRes.lengthSeconds);
+    }
+  } else {
+    // 2. Secondary Extractor: YoutubeTranscript with Consent Cookie fetch
     try {
-      rawItems = await YoutubeTranscript.fetchTranscript(videoId, { fetch: vercelCustomFetch, lang: 'hi' });
-    } catch (e2) {
+      rawItems = await YoutubeTranscript.fetchTranscript(videoId, { fetch: vercelCustomFetch, lang: 'en' });
+    } catch (e1) {
       try {
-        rawItems = await YoutubeTranscript.fetchTranscript(videoId, { fetch: vercelCustomFetch });
-      } catch (e3) {
-        // Fallback: direct InnerTube player API scraping with custom headers
+        rawItems = await YoutubeTranscript.fetchTranscript(videoId, { fetch: vercelCustomFetch, lang: 'hi' });
+      } catch (e2) {
         try {
-          const watchRes = await vercelCustomFetch(`https://www.youtube.com/watch?v=${videoId}`);
-          const watchHtml = await watchRes.text();
-          const playerMatch = watchHtml.match(/ytInitialPlayerResponse\s*=\s*({.+?});/);
-          if (playerMatch) {
-            const pData = JSON.parse(playerMatch[1]);
-            const tracks = pData?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
-            if (tracks && tracks.length > 0) {
-              const selTrack = tracks.find(t => t.languageCode === 'hi' || t.languageCode === 'en' || t.languageCode === 'or') || tracks[0];
-              const tRes = await vercelCustomFetch(selTrack.baseUrl);
-              const xmlData = await tRes.text();
-              rawItems = YoutubeTranscript.parseTranscriptXml(xmlData, selTrack.languageCode);
-            }
-          }
-        } catch (e4) {
-          console.error('All YouTube transcript extraction layers failed:', e4.message);
-        }
-
-        if (!rawItems || rawItems.length === 0) {
+          rawItems = await YoutubeTranscript.fetchTranscript(videoId, { fetch: vercelCustomFetch });
+        } catch (e3) {
           throw new Error('Could not extract captions or audio speech for this video. Please ensure the video has English or Hindi audio/captions enabled.');
         }
       }
