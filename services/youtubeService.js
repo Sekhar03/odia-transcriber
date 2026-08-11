@@ -1,8 +1,6 @@
 const { YoutubeTranscript } = require('youtube-transcript');
 const he = require('he');
 
-const INNERTUBE_API_KEY = 'AIzaSyAO_FJ2Slv5QZ0_A9-x_M4_J8-M';
-
 function extractVideoId(url) {
   if (!url) return null;
   const trimmed = url.trim();
@@ -34,8 +32,6 @@ function vercelCustomFetch(url, options = {}) {
     'Accept-Language': 'en-US,en;q=0.9,hi;q=0.8',
     'Cookie': 'SOCS=CAESEwgDEgk2ODE3ODc5OTAaAmVuIAEaBgiA_LyaBg; CONSENT=YES+cb.20210328-17-p0.en+FX+667',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    'Origin': 'https://www.youtube.com',
-    'Referer': 'https://www.youtube.com/',
     ...(options.headers || {})
   };
 
@@ -142,51 +138,44 @@ function findCaptionTracksInResponse(data) {
 }
 
 /**
- * Universal Multi-Client InnerTube Extractor (ANDROID, ANDROID_TESTSUITE, WEB).
- * Uses official YouTube InnerTube API Key for 100% cloud reliability (Render/Vercel).
+ * Universal Mobile InnerTube Extractor.
+ * Uses clean Android native app headers for 100% cloud platform authorization.
  */
 async function fetchViaInnerTube(videoId) {
   const clientConfigs = [
     {
       name: 'ANDROID',
       userAgent: 'com.google.android.youtube/20.10.38 (Linux; U; Android 14)',
-      context: { client: { hl: 'en', gl: 'US', clientName: 'ANDROID', clientVersion: '20.10.38' } }
+      clientVersion: '20.10.38'
     },
     {
-      name: 'ANDROID_TESTSUITE',
-      userAgent: 'com.google.android.youtube/20.10.38 (Linux; U; Android 14)',
-      context: { client: { hl: 'hi', gl: 'IN', clientName: 'ANDROID', clientVersion: '20.10.38' } }
-    },
-    {
-      name: 'WEB',
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-      context: { client: { hl: 'en', gl: 'US', clientName: 'WEB', clientVersion: '2.20240308.00.00' } }
+      name: 'ANDROID_LEGACY',
+      userAgent: 'com.google.android.youtube/19.09.3 (Linux; U; Android 14)',
+      clientVersion: '19.09.3'
     }
   ];
 
   for (const config of clientConfigs) {
     try {
-      const apiUrl = `https://www.youtube.com/youtubei/v1/player?key=${INNERTUBE_API_KEY}`;
+      const apiUrl = 'https://www.youtube.com/youtubei/v1/player?prettyPrint=false';
       const res = await fetch(apiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'User-Agent': config.userAgent,
-          'X-YouTube-Client-Name': String(config.name.startsWith('ANDROID') ? 3 : 1),
-          'X-YouTube-Client-Version': config.context.client.clientVersion,
-          'Origin': 'https://www.youtube.com',
-          'Referer': 'https://www.youtube.com/'
+          'User-Agent': config.userAgent
         },
         body: JSON.stringify({
-          context: config.context,
+          context: {
+            client: {
+              clientName: 'ANDROID',
+              clientVersion: config.clientVersion
+            }
+          },
           videoId: videoId
         })
       });
 
-      if (!res.ok) {
-        console.error(`InnerTube ${config.name} response error:`, res.status);
-        continue;
-      }
+      if (!res.ok) continue;
       const data = await res.json();
 
       const title = data?.videoDetails?.title || '';
@@ -211,9 +200,7 @@ async function fetchViaInnerTube(videoId) {
         try {
           const trackRes = await fetch(track.baseUrl, {
             headers: {
-              'User-Agent': config.userAgent,
-              'Origin': 'https://www.youtube.com',
-              'Referer': 'https://www.youtube.com/'
+              'User-Agent': config.userAgent
             }
           });
           if (!trackRes.ok) continue;
