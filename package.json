@@ -1,17 +1,18 @@
 {
   "name": "transacribe-odia",
   "version": "1.0.0",
-  "description": "AI YouTube Video to Odia Transcript & PDF Transcriber Application",
+  "description": "AI YouTube Video to Odia & English Transcript & PDF Transcriber Application",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "build": "npm run build --prefix client",
-    "vercel-build": "npm run build --prefix client"
+    "build": "npm --prefix client install && npm --prefix client run build",
+    "vercel-build": "npm --prefix client install && npm --prefix client run build"
   },
   "keywords": [
     "youtube",
     "transcribe",
     "odia",
+    "english",
     "pdf",
     "speech-to-text",
     "ai"
