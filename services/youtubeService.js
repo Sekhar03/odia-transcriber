@@ -38,6 +38,77 @@ function vercelCustomFetch(url, options = {}) {
   return fetch(url, { ...options, headers });
 }
 
+function parseUniversalCaptions(rawContent, lang = 'en') {
+  if (!rawContent || !rawContent.trim()) return [];
+  const results = [];
+
+  // 1. JSON3 format parsing
+  if (rawContent.trim().startsWith('{')) {
+    try {
+      const data = JSON.parse(rawContent);
+      if (data?.events) {
+        for (const evt of data.events) {
+          if (evt.segs && evt.segs.length > 0) {
+            const textStr = evt.segs.map(s => s.utf8).join('').trim();
+            const cleanText = he.decode(textStr);
+            if (cleanText && cleanText !== '\n') {
+              results.push({
+                text: cleanText,
+                offset: evt.tStartMs || 0,
+                duration: evt.dDurationMs || 3000,
+                lang
+              });
+            }
+          }
+        }
+      }
+      if (results.length > 0) return results;
+    } catch (e) {}
+  }
+
+  // 2. Try YoutubeTranscript standard XML parser
+  try {
+    const ytParsed = YoutubeTranscript.parseTranscriptXml(rawContent, lang);
+    if (ytParsed && ytParsed.length > 0) return ytParsed;
+  } catch (e) {}
+
+  // 3. Fallback: srv3 format (<p t="ms" d="ms">...)
+  const pMatches = rawContent.matchAll(/<p\s+[^>]*t=["']?(\d+)["']?[^>]*>(.*?)<\/p>/gi);
+  for (const m of pMatches) {
+    const startMs = parseInt(m[1], 10);
+    const inner = m[2].replace(/<[^>]+>/g, '').trim();
+    const cleanText = he.decode(inner);
+    if (cleanText) {
+      results.push({
+        text: cleanText,
+        offset: startMs,
+        duration: 3000,
+        lang
+      });
+    }
+  }
+  if (results.length > 0) return results;
+
+  // 4. Fallback: classic XML format (<text start="...">...)
+  const textMatches = rawContent.matchAll(/<text\s+[^>]*start=["']?([\d\.]+)["']?[^>]*>(.*?)<\/text>/gi);
+  for (const m of textMatches) {
+    const startSec = parseFloat(m[1]);
+    const startMs = startSec > 1000 ? startSec : startSec * 1000;
+    const inner = m[2].replace(/<[^>]+>/g, '').trim();
+    const cleanText = he.decode(inner);
+    if (cleanText) {
+      results.push({
+        text: cleanText,
+        offset: startMs,
+        duration: 3000,
+        lang
+      });
+    }
+  }
+
+  return results;
+}
+
 function findCaptionTracksInResponse(data) {
   if (!data) return null;
   if (data?.captions?.playerCaptionsTracklistRenderer?.captionTracks) {
@@ -66,10 +137,6 @@ function findCaptionTracksInResponse(data) {
   return found;
 }
 
-/**
- * Universal InnerTube Extractor (ANDROID, ANDROID_TESTSUITE, WEB, MWEB).
- * Tries all available caption tracks until valid dialogue lines are extracted.
- */
 async function fetchViaInnerTube(videoId) {
   const clientConfigs = [
     {
@@ -115,7 +182,6 @@ async function fetchViaInnerTube(videoId) {
       const captionTracks = findCaptionTracksInResponse(data);
       if (!captionTracks || captionTracks.length === 0) continue;
 
-      // Prioritize Hindi / English / Odia, but accept any track
       const sortedTracks = [...captionTracks].sort((a, b) => {
         const langA = (a.languageCode || '').toLowerCase();
         const langB = (b.languageCode || '').toLowerCase();
@@ -138,7 +204,7 @@ async function fetchViaInnerTube(videoId) {
           const xmlText = await trackRes.text();
           if (!xmlText || xmlText.length === 0) continue;
 
-          const parsed = YoutubeTranscript.parseTranscriptXml(xmlText, track.languageCode);
+          const parsed = parseUniversalCaptions(xmlText, track.languageCode);
           if (parsed && parsed.length > 0) {
             return {
               rawItems: parsed,
@@ -259,7 +325,7 @@ async function getYouTubeData(url, onProgressUpdate) {
       metadata.durationFormatted = formatTime(innerTubeRes.lengthSeconds);
     }
   } else {
-    // 2. YoutubeTranscript Library Extractor (tries default lang first, then hi, then en)
+    // 2. YoutubeTranscript Library Extractor
     try {
       rawItems = await YoutubeTranscript.fetchTranscript(videoId, { fetch: vercelCustomFetch });
     } catch (e1) {
