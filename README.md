@@ -43,4 +43,4 @@ npm run vercel-build
 
 Deploy directly via Vercel CLI or import the GitHub repository into the Vercel Dashboard.
 
-**Note**: The application uses multiple fallback methods including CORS proxies and youtubei.js to handle YouTube's IP restrictions on cloud deployments. No API key is required.
+**Note**: The application uses direct server-side InnerTube API calls (no CORS proxies) to extract YouTube captions reliably on Vercel and other cloud deployments. No API key is required.

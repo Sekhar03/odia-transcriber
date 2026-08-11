@@ -29,9 +29,8 @@ const YoutubeIcon = ({ className = "w-6 h-6" }) => (
   </svg>
 );
 
-const API_BASE_URL = typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')
-  ? 'https://odia-transcriber.onrender.com'
-  : '';
+// Use same-origin API (Vercel serverless / local Express). Override via VITE_API_BASE_URL if needed.
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 const SAMPLE_VIDEOS = [
   {
