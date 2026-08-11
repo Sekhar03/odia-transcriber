@@ -140,10 +140,9 @@ function findCaptionTracksInResponse(data) {
 }
 
 /**
- * Location-Agnostic Universal InnerTube Extractor.
- * 100% resilient across all global cloud datacenter IPs (Render, Vercel, AWS).
+ * Universal Mobile InnerTube Extractor with Diagnostic Logs.
  */
-async function fetchViaInnerTube(videoId) {
+async function fetchViaInnerTube(videoId, debugLogs = []) {
   const clientConfigs = [
     {
       name: 'ANDROID',
@@ -163,6 +162,7 @@ async function fetchViaInnerTube(videoId) {
 
   for (const config of clientConfigs) {
     try {
+      debugLogs.push(`[InnerTube] Trying client ${config.name} at ${config.url}`);
       const res = await fetch(config.url, {
         method: 'POST',
         headers: {
@@ -183,7 +183,7 @@ async function fetchViaInnerTube(videoId) {
       });
 
       if (!res.ok) {
-        console.log(`[InnerTube Debug] Client ${config.name} HTTP error: ${res.status}`);
+        debugLogs.push(`[InnerTube] Client ${config.name} HTTP error: ${res.status}`);
         continue;
       }
       const data = await res.json();
@@ -194,7 +194,7 @@ async function fetchViaInnerTube(videoId) {
       const lengthSeconds = parseInt(data?.videoDetails?.lengthSeconds || '0', 10);
 
       const captionTracks = findCaptionTracksInResponse(data);
-      console.log(`[InnerTube Debug] Client ${config.name} Playability: ${playability} | Tracks: ${captionTracks ? captionTracks.length : 0}`);
+      debugLogs.push(`[InnerTube] Client ${config.name} Playability: ${playability} | CaptionTracks count: ${captionTracks ? captionTracks.length : 0}`);
 
       if (!captionTracks || captionTracks.length === 0) continue;
 
@@ -211,20 +211,24 @@ async function fetchViaInnerTube(videoId) {
       for (const track of sortedTracks) {
         if (!track.baseUrl) continue;
         try {
-          const trackRes = await vercelCustomFetch(track.baseUrl);
+          debugLogs.push(`[InnerTube] Fetching track baseUrl for lang ${track.languageCode}`);
+          const trackRes = await fetch(track.baseUrl, {
+            headers: {
+              'User-Agent': config.userAgent
+            }
+          });
           if (!trackRes.ok) {
-            console.log(`[InnerTube Track Debug] Fetch track HTTP error: ${trackRes.status}`);
+            debugLogs.push(`[InnerTube Track] Fetch track HTTP error: ${trackRes.status}`);
             continue;
           }
           const xmlText = await trackRes.text();
-          if (!xmlText || xmlText.length === 0) {
-            console.log(`[InnerTube Track Debug] Empty track XML response for lang: ${track.languageCode}`);
-            continue;
-          }
+          debugLogs.push(`[InnerTube Track] XmlText length: ${xmlText ? xmlText.length : 0}`);
+          if (!xmlText || xmlText.length === 0) continue;
 
           const parsed = parseUniversalCaptions(xmlText, track.languageCode);
+          debugLogs.push(`[InnerTube Track] Parsed items count: ${parsed ? parsed.length : 0}`);
           if (parsed && parsed.length > 0) {
-            console.log(`[InnerTube SUCCESS] Extracted ${parsed.length} items using client ${config.name} and track ${track.languageCode}`);
+            debugLogs.push(`[InnerTube SUCCESS] Extracted ${parsed.length} items using client ${config.name}`);
             return {
               rawItems: parsed,
               title,
@@ -233,11 +237,11 @@ async function fetchViaInnerTube(videoId) {
             };
           }
         } catch (e) {
-          console.log(`[InnerTube Track Error] ${e.message}`);
+          debugLogs.push(`[InnerTube Track Error] ${e.message}`);
         }
       }
     } catch (err) {
-      console.error(`InnerTube client ${config.name} error:`, err.message);
+      debugLogs.push(`[InnerTube Client Error] ${config.name}: ${err.message}`);
     }
   }
 
@@ -321,12 +325,13 @@ async function getYouTubeMetadata(videoId) {
   };
 }
 
-async function getYouTubeData(url, onProgressUpdate) {
+async function getYouTubeData(url, onProgressUpdate, debugLogs = []) {
   const videoId = extractVideoId(url);
   if (!videoId) {
     throw new Error('Invalid YouTube URL. Please paste a valid YouTube video URL (e.g. https://www.youtube.com/watch?v=...)');
   }
 
+  debugLogs.push(`[getYouTubeData] Extracted videoId: ${videoId}`);
   if (onProgressUpdate) onProgressUpdate('video_detected');
 
   const metadata = await getYouTubeMetadata(videoId);
@@ -335,8 +340,8 @@ async function getYouTubeData(url, onProgressUpdate) {
   let rawItems = [];
   let sourceLanguage = 'English / Hindi';
 
-  // 1. Location-Agnostic InnerTube Multi-Client Extractor
-  const innerTubeRes = await fetchViaInnerTube(videoId);
+  // 1. Universal InnerTube Multi-Client Extractor
+  const innerTubeRes = await fetchViaInnerTube(videoId, debugLogs);
   if (innerTubeRes && innerTubeRes.rawItems && innerTubeRes.rawItems.length > 0) {
     rawItems = innerTubeRes.rawItems;
     if (innerTubeRes.title) metadata.title = innerTubeRes.title;
@@ -346,6 +351,7 @@ async function getYouTubeData(url, onProgressUpdate) {
       metadata.durationFormatted = formatTime(innerTubeRes.lengthSeconds);
     }
   } else {
+    debugLogs.push(`[getYouTubeData] InnerTube returned null. Trying Watch Page HTML Fallback...`);
     // 2. Watch Page HTML Scraping Fallback
     try {
       const watchRes = await vercelCustomFetch(`https://www.youtube.com/watch?v=${videoId}`);
@@ -354,6 +360,7 @@ async function getYouTubeData(url, onProgressUpdate) {
       if (match) {
         const pData = JSON.parse(match[1]);
         const captionTracks = findCaptionTracksInResponse(pData);
+        debugLogs.push(`[Watch HTML] CaptionTracks count: ${captionTracks ? captionTracks.length : 0}`);
         if (captionTracks && captionTracks.length > 0) {
           for (const tr of captionTracks) {
             if (!tr.baseUrl) continue;
@@ -362,28 +369,29 @@ async function getYouTubeData(url, onProgressUpdate) {
             const parsed = parseUniversalCaptions(txtData, tr.languageCode);
             if (parsed && parsed.length > 0) {
               rawItems = parsed;
-              console.log(`[Watch HTML Fallback SUCCESS] Extracted ${parsed.length} items`);
+              debugLogs.push(`[Watch HTML SUCCESS] Extracted ${parsed.length} items`);
               break;
             }
           }
         }
       }
     } catch (e2) {
-      console.log('[Watch HTML Fallback Error]', e2.message);
+      debugLogs.push(`[Watch HTML Error] ${e2.message}`);
     }
 
     if (!rawItems || rawItems.length === 0) {
-      // 3. YoutubeTranscript Library Extractor
+      debugLogs.push(`[getYouTubeData] Trying YoutubeTranscript library...`);
       try {
         rawItems = await YoutubeTranscript.fetchTranscript(videoId, { fetch: vercelCustomFetch });
       } catch (e3) {
+        debugLogs.push(`[YoutubeTranscript Error] ${e3.message}`);
         try {
           rawItems = await YoutubeTranscript.fetchTranscript(videoId, { fetch: vercelCustomFetch, lang: 'hi' });
         } catch (e4) {
           try {
             rawItems = await YoutubeTranscript.fetchTranscript(videoId, { fetch: vercelCustomFetch, lang: 'en' });
           } catch (e5) {
-            // 4. Direct TimedText Endpoints Fallback
+            debugLogs.push(`[getYouTubeData] Trying Direct TimedText Endpoints...`);
             const fallbacks = ['hi', 'en', 'or', 'a.hi', 'a.en'];
             for (const fLang of fallbacks) {
               try {
@@ -392,14 +400,14 @@ async function getYouTubeData(url, onProgressUpdate) {
                 const parsed = parseUniversalCaptions(directTxt, fLang);
                 if (parsed && parsed.length > 0) {
                   rawItems = parsed;
-                  console.log(`[Direct Endpoint Fallback SUCCESS] Extracted ${parsed.length} items for lang ${fLang}`);
+                  debugLogs.push(`[Direct Endpoint SUCCESS] Extracted ${parsed.length} items for lang ${fLang}`);
                   break;
                 }
               } catch (e6) {}
             }
 
             if (!rawItems || rawItems.length === 0) {
-              console.error('[getYouTubeData Error] Caption extraction failed for videoId:', videoId);
+              debugLogs.push(`[getYouTubeData Error] ALL 5 LAYERS FAILED for videoId: ${videoId}`);
               throw new Error(`Could not extract captions for video ID (${videoId}). Please check if the video has captions/subtitles enabled on YouTube.`);
             }
           }

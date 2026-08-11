@@ -44,6 +44,7 @@ app.get('/api/health', (req, res) => {
 
 // API: Transcribe YouTube Video to Odia or English
 app.post('/api/transcribe', async (req, res) => {
+  const debugLogs = [];
   try {
     const { url, targetLang = 'or' } = req.body;
     if (!url) {
@@ -58,7 +59,7 @@ app.post('/api/transcribe', async (req, res) => {
       progressLogs.push(step);
     };
 
-    const ytData = await getYouTubeData(url, onProgressUpdate);
+    const ytData = await getYouTubeData(url, onProgressUpdate, debugLogs);
     
     console.log(`[API /api/transcribe] Extracted ${ytData.lines.length} dialogue lines. Translating to ${targetLang}...`);
     const translatedLines = await translateLinesToTargetLanguage(ytData.lines, targetLang, onProgressUpdate);
@@ -73,7 +74,11 @@ app.post('/api/transcribe', async (req, res) => {
     });
   } catch (err) {
     console.error('[API /api/transcribe Error]', err.message);
-    return res.status(500).json({ success: false, error: err.message });
+    return res.status(500).json({
+      success: false,
+      error: err.message,
+      debugLogs
+    });
   }
 });
 
