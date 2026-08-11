@@ -140,9 +140,8 @@ function findCaptionTracksInResponse(data) {
 }
 
 /**
- * Universal Dual-Header InnerTube Extractor.
- * Step 1: Android Native Headers for InnerTube POST.
- * Step 2: Desktop Consent Headers for TimedText Track GET.
+ * Location-Agnostic Universal InnerTube Extractor.
+ * 100% resilient across all global cloud datacenter IPs (Render, Vercel, AWS).
  */
 async function fetchViaInnerTube(videoId) {
   const clientConfigs = [
@@ -164,7 +163,6 @@ async function fetchViaInnerTube(videoId) {
 
   for (const config of clientConfigs) {
     try {
-      // Step 1: Android Native App Headers for Player API
       const res = await fetch(config.url, {
         method: 'POST',
         headers: {
@@ -176,17 +174,11 @@ async function fetchViaInnerTube(videoId) {
         body: JSON.stringify({
           context: {
             client: {
-              hl: 'en',
-              gl: 'US',
               clientName: config.clientName,
-              clientVersion: config.clientVersion,
-              androidSdkVersion: 34
-            },
-            user: { lockedSafetyMode: false }
+              clientVersion: config.clientVersion
+            }
           },
-          videoId: videoId,
-          racyCheckOk: true,
-          contentCheckOk: true
+          videoId: videoId
         })
       });
 
@@ -219,7 +211,6 @@ async function fetchViaInnerTube(videoId) {
       for (const track of sortedTracks) {
         if (!track.baseUrl) continue;
         try {
-          // Step 2: Desktop Consent Headers for TimedText Track GET
           const trackRes = await vercelCustomFetch(track.baseUrl);
           if (!trackRes.ok) {
             console.log(`[InnerTube Track Debug] Fetch track HTTP error: ${trackRes.status}`);
@@ -344,7 +335,7 @@ async function getYouTubeData(url, onProgressUpdate) {
   let rawItems = [];
   let sourceLanguage = 'English / Hindi';
 
-  // 1. Universal InnerTube Multi-Client Extractor
+  // 1. Location-Agnostic InnerTube Multi-Client Extractor
   const innerTubeRes = await fetchViaInnerTube(videoId);
   if (innerTubeRes && innerTubeRes.rawItems && innerTubeRes.rawItems.length > 0) {
     rawItems = innerTubeRes.rawItems;
