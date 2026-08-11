@@ -10,6 +10,17 @@ const { createOdiaPDF } = require('./services/pdfService');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Explicit CORS middleware for cloud cross-domain requests
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, DELETE');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
@@ -25,6 +36,11 @@ if (!fs.existsSync(distPath)) {
     console.error('[Cloud Deployment] Frontend build error:', err.message);
   }
 }
+
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
 
 // API: Transcribe YouTube Video to Odia or English
 app.post('/api/transcribe', async (req, res) => {
