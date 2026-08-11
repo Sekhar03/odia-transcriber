@@ -7,48 +7,78 @@ const FETCH_TIMEOUT_MS = 12000;
 const ANDROID_UA = 'com.google.android.youtube/20.10.38 (Linux; U; Android 14)';
 const WEB_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 
-const INNERTUBE_CLIENTS = [
-  {
-    name: 'ANDROID',
-    url: `https://www.youtube.com/youtubei/v1/player?key=${INNERTUBE_API_KEY}`,
-    userAgent: ANDROID_UA,
-    clientVersion: '20.10.38',
-    clientName: 'ANDROID',
-    clientId: '3'
-  },
-  {
-    name: 'IOS',
-    url: `https://www.youtube.com/youtubei/v1/player?key=${INNERTUBE_API_KEY}`,
-    userAgent: 'com.google.ios.youtube/20.10.38 (iPhone14,3; U; CPU iOS 17_0 like Mac OS X)',
-    clientVersion: '20.10.38',
-    clientName: 'IOS',
-    clientId: '5'
-  },
-  {
-    name: 'MWEB',
-    url: `https://www.youtube.com/youtubei/v1/player?key=${INNERTUBE_API_KEY}`,
-    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
-    clientVersion: '2.20250205.01.00',
-    clientName: 'MWEB',
-    clientId: '2'
-  },
-  {
-    name: 'TV_EMBEDDED',
-    url: `https://www.youtube.com/youtubei/v1/player?key=${INNERTUBE_API_KEY}`,
-    userAgent: 'Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version',
-    clientVersion: '2.0',
-    clientName: 'TVHTML5_SIMPLY_EMBEDDED_PLAYER',
-    clientId: '85'
-  },
-  {
-    name: 'WEB',
-    url: 'https://www.youtube.com/youtubei/v1/player?prettyPrint=false',
-    userAgent: WEB_UA,
-    clientVersion: '2.20250205.01.00',
-    clientName: 'WEB',
-    clientId: '1'
-  }
+const FALLBACK_INVIDIOUS_INSTANCES = [
+  'https://inv.nadeko.net',
+  'https://invidious.f5.si',
+  'https://yt.artemislena.eu',
+  'https://invidious.protokolla.fi',
+  'https://invidious.privacyredirect.com',
+  'https://invidious.dhusch.de'
 ];
+
+function getInnerTubeClients(apiKey = INNERTUBE_API_KEY) {
+  const playerUrl = (key) => `https://www.youtube.com/youtubei/v1/player?key=${key}`;
+
+  return [
+    {
+      name: 'ANDROID',
+      url: playerUrl(apiKey),
+      userAgent: ANDROID_UA,
+      clientVersion: '20.10.38',
+      clientName: 'ANDROID',
+      clientId: '3',
+      clientExtras: { androidSdkVersion: 34, osName: 'Android', osVersion: '14' }
+    },
+    {
+      name: 'ANDROID_EMBEDDED',
+      url: playerUrl(apiKey),
+      userAgent: ANDROID_UA,
+      clientVersion: '20.10.38',
+      clientName: 'ANDROID_EMBEDDED',
+      clientId: '55',
+      contextExtras: (videoId) => ({
+        thirdParty: { embedUrl: `https://www.youtube.com/embed/${videoId}` }
+      })
+    },
+    {
+      name: 'IOS',
+      url: playerUrl(apiKey),
+      userAgent: 'com.google.ios.youtube/20.10.38 (iPhone14,3; U; CPU iOS 17_0 like Mac OS X)',
+      clientVersion: '20.10.38',
+      clientName: 'IOS',
+      clientId: '5'
+    },
+    {
+      name: 'TV_EMBEDDED',
+      url: playerUrl(apiKey),
+      userAgent: 'Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version',
+      clientVersion: '2.0',
+      clientName: 'TVHTML5_SIMPLY_EMBEDDED_PLAYER',
+      clientId: '85',
+      clientExtras: { clientScreen: 'EMBED', androidSdkVersion: 30 },
+      contextExtras: (videoId) => ({
+        thirdParty: { embedUrl: `https://www.youtube.com/embed/${videoId}` }
+      })
+    },
+    {
+      name: 'MWEB',
+      url: playerUrl(apiKey),
+      userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+      clientVersion: '2.20250205.01.00',
+      clientName: 'MWEB',
+      clientId: '2'
+    },
+    {
+      name: 'WEB',
+      url: 'https://www.youtube.com/youtubei/v1/player?prettyPrint=false',
+      userAgent: WEB_UA,
+      clientVersion: '2.20250205.01.00',
+      clientName: 'WEB',
+      clientId: '1',
+      clientExtras: { clientScreen: 'WATCH' }
+    }
+  ];
+}
 
 const YOUTUBE_FETCH_PROFILES = [
   {
@@ -254,6 +284,151 @@ function buildCaptionUrls(baseUrl) {
   ];
 }
 
+function buildInnerTubeRequestBody(config, videoId) {
+  return {
+    context: {
+      client: {
+        clientName: config.clientName,
+        clientVersion: config.clientVersion,
+        hl: 'en',
+        gl: 'US',
+        ...(config.clientExtras || {})
+      },
+      ...(config.contextExtras ? config.contextExtras(videoId) : {})
+    },
+    videoId,
+    contentCheckOk: true,
+    racyCheckOk: true
+  };
+}
+
+async function extractInnertubeApiKey(videoId, debugLogs = []) {
+  try {
+    const res = await youtubeFetch(`https://www.youtube.com/watch?v=${videoId}`, YOUTUBE_FETCH_PROFILES[1]);
+    if (!res.ok) return null;
+
+    const html = await res.text();
+    const match = html.match(/"INNERTUBE_API_KEY":"([^"]+)"/)
+      || html.match(/INNERTUBE_API_KEY['"]\s*:\s*['"]([^'"]+)['"]/);
+
+    if (match?.[1]) {
+      debugLogs.push('[InnerTube] Extracted fresh INNERTUBE_API_KEY from watch page');
+      return match[1];
+    }
+  } catch (e) {
+    debugLogs.push(`[InnerTube] API key extraction failed: ${e.message}`);
+  }
+
+  return null;
+}
+
+function parseVttTimestamp(value) {
+  const normalized = value.trim().replace(',', '.');
+  const parts = normalized.split(':').map(Number);
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  return 0;
+}
+
+function parseWebVTT(content, lang = 'en') {
+  if (!content?.trim()) return [];
+
+  const results = [];
+  const blocks = content.replace(/\r/g, '').split(/\n\n+/);
+
+  for (const block of blocks) {
+    const lines = block.split('\n').filter(Boolean);
+    if (!lines.length || lines[0].startsWith('WEBVTT') || lines[0].startsWith('NOTE')) continue;
+
+    const idx = lines.findIndex(line => line.includes('-->'));
+    if (idx === -1) continue;
+
+    const [startRaw, endRaw] = lines[idx].split('-->').map(part => part.trim().split(' ')[0]);
+    const text = lines.slice(idx + 1).join(' ').replace(/<[^>]+>/g, '').trim();
+    if (!text) continue;
+
+    const startSec = parseVttTimestamp(startRaw);
+    const endSec = parseVttTimestamp(endRaw);
+
+    results.push({
+      text: he.decode(text),
+      offset: startSec * 1000,
+      duration: Math.max((endSec - startSec) * 1000, 500),
+      lang
+    });
+  }
+
+  return results;
+}
+
+async function getInvidiousInstances() {
+  try {
+    const res = await fetchWithTimeout('https://api.invidious.io/instances.json?sort_by=health', {}, 8000);
+    if (!res.ok) return FALLBACK_INVIDIOUS_INSTANCES;
+
+    const data = await res.json();
+    const instances = data
+      .filter(([, meta]) => meta?.type === 'https')
+      .slice(0, 10)
+      .map(([uri]) => `https://${String(uri).replace(/^https?:\/\//, '')}`);
+
+    return instances.length ? instances : FALLBACK_INVIDIOUS_INSTANCES;
+  } catch (e) {
+    return FALLBACK_INVIDIOUS_INSTANCES;
+  }
+}
+
+async function fetchViaInvidious(videoId, debugLogs = []) {
+  debugLogs.push('[Invidious] Trying public Invidious instances for cloud IP fallback...');
+  const instances = await getInvidiousInstances();
+
+  for (const base of instances) {
+    try {
+      const listRes = await fetchWithTimeout(`${base}/api/v1/captions/${videoId}`, {
+        headers: { 'User-Agent': WEB_UA, Accept: 'application/json' }
+      }, 8000);
+
+      if (!listRes.ok) {
+        debugLogs.push(`[Invidious] ${base} list HTTP ${listRes.status}`);
+        continue;
+      }
+
+      const payload = await listRes.json();
+      const captions = payload.captions || [];
+      debugLogs.push(`[Invidious] ${base} tracks=${captions.length}`);
+      if (!captions.length) continue;
+
+      const preferred = captions.find(c => /^hi/i.test(c.languageCode || c.label || ''))
+        || captions.find(c => /^en/i.test(c.languageCode || c.label || ''))
+        || captions[0];
+
+      const captionPath = preferred.url
+        || `/api/v1/captions/${videoId}?label=${encodeURIComponent(preferred.label)}`;
+      const captionUrl = captionPath.startsWith('http') ? captionPath : `${base}${captionPath}`;
+
+      const capRes = await fetchWithTimeout(captionUrl, {
+        headers: { 'User-Agent': WEB_UA, Accept: 'text/vtt,text/plain,*/*' }
+      }, 10000);
+
+      if (!capRes.ok) continue;
+
+      const body = await capRes.text();
+      const lang = preferred.languageCode || 'en';
+      let parsed = parseWebVTT(body, lang);
+      if (!parsed.length) parsed = parseUniversalCaptions(body, lang);
+
+      if (parsed.length) {
+        debugLogs.push(`[Invidious] SUCCESS ${parsed.length} captions via ${base}`);
+        return { rawItems: parsed };
+      }
+    } catch (e) {
+      debugLogs.push(`[Invidious] ${base} failed: ${e.message}`);
+    }
+  }
+
+  return null;
+}
+
 async function fetchCaptionTrackBody(baseUrl, profile) {
   for (const url of buildCaptionUrls(baseUrl)) {
     try {
@@ -279,17 +454,7 @@ async function tryInnerTubeClient(config, videoId, debugLogs = []) {
       'X-YouTube-Client-Name': config.clientId,
       'X-YouTube-Client-Version': config.clientVersion
     },
-    body: JSON.stringify({
-      context: {
-        client: {
-          clientName: config.clientName,
-          clientVersion: config.clientVersion,
-          hl: 'en',
-          gl: 'US'
-        }
-      },
-      videoId
-    })
+    body: JSON.stringify(buildInnerTubeRequestBody(config, videoId))
   });
 
   if (!res.ok) {
@@ -298,8 +463,13 @@ async function tryInnerTubeClient(config, videoId, debugLogs = []) {
   }
 
   const data = await res.json();
+  const playability = data?.playabilityStatus?.status;
   const captionTracks = findCaptionTracksInResponse(data);
-  debugLogs.push(`[InnerTube:${config.name}] playability=${data?.playabilityStatus?.status} tracks=${captionTracks?.length || 0}`);
+  debugLogs.push(`[InnerTube:${config.name}] playability=${playability} tracks=${captionTracks?.length || 0}`);
+
+  if (playability === 'LOGIN_REQUIRED') {
+    return null;
+  }
 
   if (!captionTracks?.length) return null;
 
@@ -338,19 +508,24 @@ async function tryInnerTubeClient(config, videoId, debugLogs = []) {
  * InnerTube multi-client extractor — direct server-side calls, no proxies.
  */
 async function fetchViaInnerTube(videoId, debugLogs = []) {
-  debugLogs.push('[InnerTube] Racing direct InnerTube clients...');
+  debugLogs.push('[InnerTube] Trying direct InnerTube clients...');
 
-  const attempts = INNERTUBE_CLIENTS.map(async (config) => {
+  let apiKey = INNERTUBE_API_KEY;
+  const extractedKey = await extractInnertubeApiKey(videoId, debugLogs);
+  if (extractedKey) apiKey = extractedKey;
+
+  const clients = getInnerTubeClients(apiKey);
+
+  for (const config of clients) {
     try {
-      return await tryInnerTubeClient(config, videoId, debugLogs);
+      const result = await tryInnerTubeClient(config, videoId, debugLogs);
+      if (result?.rawItems?.length) return result;
     } catch (err) {
       debugLogs.push(`[InnerTube:${config.name}] ${err.message}`);
-      return null;
     }
-  });
+  }
 
-  const results = await Promise.all(attempts);
-  return results.find(result => result?.rawItems?.length) || null;
+  return null;
 }
 
 /**
@@ -359,55 +534,65 @@ async function fetchViaInnerTube(videoId, debugLogs = []) {
 async function fetchViaYoutubeiJS(videoId, debugLogs = []) {
   try {
     debugLogs.push('[youtubei.js] Initializing Innertube...');
-    const { Innertube } = await import('youtubei.js');
-    const innertube = await Innertube.create({
-      retrieve_player: false,
-      generate_session_locally: true
-    });
+    const { Innertube, ClientType } = await import('youtubei.js');
+    const clientTypes = [ClientType.ANDROID, ClientType.TV_EMBEDDED, ClientType.IOS];
 
-    const info = await innertube.getInfo(videoId);
-    const captionTracks = info.captions?.caption_tracks;
-    debugLogs.push(`[youtubei.js] caption tracks=${captionTracks?.length || 0}`);
+    for (const clientType of clientTypes) {
+      try {
+        debugLogs.push(`[youtubei.js] Trying client ${clientType}...`);
+        const innertube = await Innertube.create({
+          client_type: clientType,
+          retrieve_player: false,
+          generate_session_locally: true
+        });
 
-    if (captionTracks?.length) {
-      const sortedTracks = sortCaptionTracks(captionTracks, track => track.language_code);
+        const info = await innertube.getInfo(videoId);
+        const captionTracks = info.captions?.caption_tracks;
+        debugLogs.push(`[youtubei.js] ${clientType} caption tracks=${captionTracks?.length || 0}`);
 
-      for (const track of sortedTracks) {
-        if (!track.base_url) continue;
+        if (captionTracks?.length) {
+          const sortedTracks = sortCaptionTracks(captionTracks, track => track.language_code);
 
-        const body = await fetchCaptionTrackBody(track.base_url, YOUTUBE_FETCH_PROFILES[0]);
-        const parsed = parseUniversalCaptions(body, track.language_code);
-        if (parsed?.length) {
-          debugLogs.push(`[youtubei.js] SUCCESS ${parsed.length} captions via base_url`);
-          return {
-            rawItems: parsed,
-            title: info.basic_info?.title || '',
-            author: info.basic_info?.author || '',
-            lengthSeconds: info.basic_info?.duration || 0
-          };
+          for (const track of sortedTracks) {
+            if (!track.base_url) continue;
+
+            const body = await fetchCaptionTrackBody(track.base_url, YOUTUBE_FETCH_PROFILES[0]);
+            const parsed = parseUniversalCaptions(body, track.language_code);
+            if (parsed?.length) {
+              debugLogs.push(`[youtubei.js] SUCCESS ${parsed.length} captions via base_url`);
+              return {
+                rawItems: parsed,
+                title: info.basic_info?.title || '',
+                author: info.basic_info?.author || '',
+                lengthSeconds: info.basic_info?.duration || 0
+              };
+            }
+          }
         }
-      }
-    }
 
-    try {
-      const transcript = await info.getTranscript();
-      const segments = transcript?.transcript?.content?.body?.initial_segments
-        || transcript?.content?.body?.initial_segments
-        || transcript?.segments
-        || [];
-      const rawItems = transcriptSegmentsToRawItems(segments, 'en');
+        try {
+          const transcript = await info.getTranscript();
+          const segments = transcript?.transcript?.content?.body?.initial_segments
+            || transcript?.content?.body?.initial_segments
+            || transcript?.segments
+            || [];
+          const rawItems = transcriptSegmentsToRawItems(segments, 'en');
 
-      if (rawItems.length) {
-        debugLogs.push(`[youtubei.js] SUCCESS ${rawItems.length} captions via getTranscript`);
-        return {
-          rawItems,
-          title: info.basic_info?.title || '',
-          author: info.basic_info?.author || '',
-          lengthSeconds: info.basic_info?.duration || 0
-        };
+          if (rawItems.length) {
+            debugLogs.push(`[youtubei.js] SUCCESS ${rawItems.length} captions via getTranscript`);
+            return {
+              rawItems,
+              title: info.basic_info?.title || '',
+              author: info.basic_info?.author || '',
+              lengthSeconds: info.basic_info?.duration || 0
+            };
+          }
+        } catch (e) {
+          debugLogs.push(`[youtubei.js] ${clientType} getTranscript failed: ${e.message}`);
+        }
+      } catch (e) {
+        debugLogs.push(`[youtubei.js] ${clientType} failed: ${e.message}`);
       }
-    } catch (e) {
-      debugLogs.push(`[youtubei.js] getTranscript failed: ${e.message}`);
     }
   } catch (e) {
     debugLogs.push(`[youtubei.js] ${e.message}`);
@@ -651,9 +836,18 @@ async function getYouTubeData(url, onProgressUpdate, debugLogs = []) {
     }
   }
 
-  // Layer 2: youtubei.js library (direct InnerTube client)
+  // Layer 2: Invidious fallback for cloud/datacenter IPs blocked by YouTube
   if (!rawItems.length) {
-    debugLogs.push('[Layer 2] youtubei.js...');
+    debugLogs.push('[Layer 2] Invidious fallback...');
+    const invidiousRes = await fetchViaInvidious(videoId, debugLogs);
+    if (invidiousRes?.rawItems?.length) {
+      rawItems = invidiousRes.rawItems;
+    }
+  }
+
+  // Layer 3: youtubei.js library (direct InnerTube client)
+  if (!rawItems.length) {
+    debugLogs.push('[Layer 3] youtubei.js...');
     const youtubeiRes = await fetchViaYoutubeiJS(videoId, debugLogs);
     if (youtubeiRes?.rawItems?.length) {
       rawItems = youtubeiRes.rawItems;
@@ -661,43 +855,43 @@ async function getYouTubeData(url, onProgressUpdate, debugLogs = []) {
     }
   }
 
-  // Layer 3: Watch/embed page scrape (direct server fetch)
+  // Layer 4: Watch/embed page scrape (direct server fetch)
   if (!rawItems.length) {
-    debugLogs.push('[Layer 3] Watch page scrape...');
+    debugLogs.push('[Layer 4] Watch page scrape...');
     const watchRes = await fetchViaWatchPage(videoId, debugLogs);
     if (watchRes?.rawItems?.length) {
       rawItems = watchRes.rawItems;
     }
   }
 
-  // Layer 4: Direct timedtext endpoints
+  // Layer 5: Direct timedtext endpoints
   if (!rawItems.length) {
-    debugLogs.push('[Layer 4] Direct timedtext...');
+    debugLogs.push('[Layer 5] Direct timedtext...');
     const timedTextRes = await fetchViaDirectTimedText(videoId, debugLogs);
     if (timedTextRes?.rawItems?.length) {
       rawItems = timedTextRes.rawItems;
     }
   }
 
-  // Layer 5: youtube-transcript with direct server fetch
+  // Layer 6: youtube-transcript with direct server fetch
   if (!rawItems.length) {
-    debugLogs.push('[Layer 5] youtube-transcript direct fetch...');
+    debugLogs.push('[Layer 6] youtube-transcript direct fetch...');
     rawItems = await fetchViaYoutubeTranscript(
       videoId,
       (fetchUrl, options) => youtubeFetch(fetchUrl, YOUTUBE_FETCH_PROFILES[0], options),
       debugLogs,
-      'Layer 5'
+      'Layer 6'
     );
   }
 
-  // Layer 6: youtube-transcript with consent cookies
+  // Layer 7: youtube-transcript with consent cookies
   if (!rawItems.length) {
-    debugLogs.push('[Layer 6] youtube-transcript with consent headers...');
+    debugLogs.push('[Layer 7] youtube-transcript with consent headers...');
     rawItems = await fetchViaYoutubeTranscript(
       videoId,
       customYoutubeFetch,
       debugLogs,
-      'Layer 6'
+      'Layer 7'
     );
   }
 
