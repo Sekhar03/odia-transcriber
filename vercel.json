@@ -5,17 +5,11 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "/api/index.js"
+      "destination": "https://odia-transcriber.onrender.com/api/:path*"
     },
     {
       "source": "/(.*)",
       "destination": "/index.html"
     }
-  ],
-  "functions": {
-    "api/index.js": {
-      "includeFiles": "fonts/**",
-      "maxDuration": 60
-    }
-  }
+  ]
 }

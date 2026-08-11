@@ -29,6 +29,10 @@ const YoutubeIcon = ({ className = "w-6 h-6" }) => (
   </svg>
 );
 
+const API_BASE_URL = typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')
+  ? 'https://odia-transcriber.onrender.com'
+  : '';
+
 const SAMPLE_VIDEOS = [
   {
     name: 'Hindi Educational / Talk',
@@ -108,7 +112,7 @@ export default function App() {
     const progressTimer = simulateProgress();
 
     try {
-      const res = await fetch('/api/transcribe', {
+      const res = await fetch(`${API_BASE_URL}/api/transcribe`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: finalUrl, targetLang: selectedLang })
@@ -163,7 +167,7 @@ export default function App() {
     setPdfGenerating(true);
 
     try {
-      const response = await fetch('/api/generate-pdf', {
+      const response = await fetch(`${API_BASE_URL}/api/generate-pdf`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
