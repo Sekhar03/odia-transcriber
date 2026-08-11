@@ -19,21 +19,47 @@ const HINDI_TO_ODIA_MAP = {
   'पंजाब': 'ପଞ୍ଜାବ',
   'गुजरात': 'ଗୁଜରାଟ',
   'महाराष्ट्र': 'ମହାରାଷ୍ଟ୍ର',
-  'बिहार': 'ବିହାର',
-  'प्रशंसा': '',
-  'संगीत': ''
+  'बिहार': 'ବିହାର'
 };
 
 function cleanAsrArtifacts(text) {
   if (!text) return '';
   let cleaned = text.replace(/\b(\w+)\s+\1\b/gi, '$1');
-  cleaned = cleaned.replace(/\[\s*\]/g, '').trim();
+  cleaned = cleaned.replace(/\[\s*(ମ୍ୟୁଜିକ୍|ସଙ୍ଗୀତ|music|applause|प्रशंसा|संगीत|ଅଶ୍ରବ୍ୟ)\s*\]/gi, '').trim();
   return cleaned;
+}
+
+function cleanOdiaMangledWords(text) {
+  if (!text) return '';
+  let s = String(text);
+
+  // 1. Remove music / noise tags
+  s = s.replace(/\[\s*(ମ୍ୟୁଜିକ୍|ସଙ୍ଗୀତ|music|applause|प्रशंसा|संगीत|ଅଶ୍ରବ୍ୟ)\s*\]/gi, '');
+
+  // 2. Fix specific mangled English+Odia combinations
+  const fixMap = [
+    [/\b(loans?|debts?|loan|debt|the|an|or)\s*ଣ\b/gi, 'ଋଣ'],
+    [/\b(ishi|ish|age)\s*ଷି\b/gi, 'ଋଷି'],
+    [/\bGod\s*ଶ୍ବର\b/gi, 'ଈଶ୍ବର'],
+    [/\bdon'?t\s*ିନାହଁ\b/gi, 'ବୁଝିନାହଁ'],
+    [/\bvalmiki\b/gi, 'ବାଲ୍ମୀକି'],
+    [/\bbedvyas|vedvyas\b/gi, 'ବେଦବ୍ୟାସ']
+  ];
+
+  fixMap.forEach(([pattern, replacement]) => {
+    s = s.replace(pattern, replacement);
+  });
+
+  // 3. Remove stray Latin letters directly attached to Odia words
+  s = s.replace(/\b[a-z]{1,4}\s*(?=[\u0B00-\u0B7F])/gi, '');
+  s = s.replace(/(?<=[\u0B00-\u0B7F])\s*[a-z]{1,4}\b/gi, '');
+
+  return s;
 }
 
 function sanitizeOdiaForPdf(text) {
   if (!text) return '';
-  let str = String(text);
+  let str = cleanOdiaMangledWords(text);
 
   // Punctuation & Smart Quotes Normalization
   str = str.replace(/[\u201C\u201D\u201E\u201F]/g, '"')
@@ -41,8 +67,7 @@ function sanitizeOdiaForPdf(text) {
            .replace(/\u2026/g, '...')
            .replace(/[\u2013\u2014]/g, '-')
            .replace(/\u20B9/g, 'Rs.')
-           .replace(/[♪♫★✓✔▪►]/g, '')
-           .replace(/\|\|\|?/g, ' ');
+           .replace(/[♪♫★✓✔▪►]/g, '');
 
   // Transliterate Hindi place names
   Object.keys(HINDI_TO_ODIA_MAP).forEach(k => {
@@ -63,7 +88,6 @@ async function translateSingleText(text, targetLang = 'or') {
   if (!text || !text.trim()) return '';
   const cleanedInput = cleanAsrArtifacts(text);
 
-  // If target language is English and text is already in English (ASCII), return clean input
   if (targetLang === 'en' && /^[\x00-\x7F\s.,!?:;()"-]+$/.test(cleanedInput)) {
     return cleanedInput;
   }
@@ -101,50 +125,39 @@ async function translateSingleText(text, targetLang = 'or') {
   }
 }
 
+/**
+ * Line-by-line concurrent translation engine.
+ * Guarantees strict 1-to-1 dialogue line mapping (NEVER merges lines).
+ */
 async function translateLinesToTargetLanguage(lines, targetLang = 'or', onProgressUpdate) {
   if (!lines || lines.length === 0) return [];
 
   if (onProgressUpdate) onProgressUpdate(targetLang === 'en' ? 'converting_to_english' : 'converting_to_odia');
 
-  const batchSize = 12;
-  const chunks = [];
-  for (let i = 0; i < lines.length; i += batchSize) {
-    chunks.push({ startIndex: i, items: lines.slice(i, i + batchSize) });
-  }
+  const concurrency = 8;
+  const translatedLines = new Array(lines.length);
 
-  const concurrency = 6;
-  const translatedLines = [...lines];
+  for (let i = 0; i < lines.length; i += concurrency) {
+    const chunk = lines.slice(i, i + concurrency);
+    await Promise.all(
+      chunk.map(async (line, chunkIdx) => {
+        const globalIdx = i + chunkIdx;
+        const cleanedText = cleanAsrArtifacts(line.text);
+        let translatedText = await translateSingleText(cleanedText, targetLang);
 
-  for (let i = 0; i < chunks.length; i += concurrency) {
-    const activeGroup = chunks.slice(i, i + concurrency);
-    await Promise.all(activeGroup.map(async (group) => {
-      const joinedText = group.items.map(l => cleanAsrArtifacts(l.text).replace(/\|\|\|/g, '')).join(' ||| ');
-      try {
-        const translatedBatchStr = await translateSingleText(joinedText, targetLang);
-        const parts = translatedBatchStr.split(/\s*\|\|\|\s*/);
-
-        for (let j = 0; j < group.items.length; j++) {
-          const lineIndex = group.startIndex + j;
-          const translatedPart = (parts[j] && parts[j].trim()) ? parts[j].trim() : await translateSingleText(group.items[j].text, targetLang);
-          
-          translatedLines[lineIndex] = {
-            ...translatedLines[lineIndex],
-            text: cleanAsrArtifacts(group.items[j].text),
-            translatedText: targetLang === 'or' ? sanitizeOdiaForPdf(translatedPart) : cleanAsrArtifacts(translatedPart)
-          };
+        if (targetLang === 'or') {
+          translatedText = sanitizeOdiaForPdf(translatedText);
+        } else {
+          translatedText = cleanAsrArtifacts(translatedText);
         }
-      } catch (e) {
-        for (let j = 0; j < group.items.length; j++) {
-          const lineIndex = group.startIndex + j;
-          const translatedPart = await translateSingleText(group.items[j].text, targetLang);
-          translatedLines[lineIndex] = {
-            ...translatedLines[lineIndex],
-            text: cleanAsrArtifacts(group.items[j].text),
-            translatedText: targetLang === 'or' ? sanitizeOdiaForPdf(translatedPart) : cleanAsrArtifacts(translatedPart)
-          };
-        }
-      }
-    }));
+
+        translatedLines[globalIdx] = {
+          ...line,
+          text: cleanedText,
+          translatedText: translatedText || cleanedText
+        };
+      })
+    );
   }
 
   return translatedLines;
@@ -152,6 +165,7 @@ async function translateLinesToTargetLanguage(lines, targetLang = 'or', onProgre
 
 module.exports = {
   cleanAsrArtifacts,
+  cleanOdiaMangledWords,
   sanitizeOdiaForPdf,
   translateSingleText,
   translateLinesToTargetLanguage
