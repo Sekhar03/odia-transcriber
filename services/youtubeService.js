@@ -67,8 +67,8 @@ function findCaptionTracksInResponse(data) {
 }
 
 /**
- * Multi-Client InnerTube API Extractor (ANDROID + WEB).
- * 100% resilient across all Serverless & Datacenter Cloud IPs.
+ * Universal InnerTube Extractor (ANDROID, ANDROID_TESTSUITE, WEB, MWEB).
+ * Tries all available caption tracks until valid dialogue lines are extracted.
  */
 async function fetchViaInnerTube(videoId) {
   const clientConfigs = [
@@ -76,6 +76,11 @@ async function fetchViaInnerTube(videoId) {
       name: 'ANDROID',
       userAgent: 'com.google.android.youtube/20.10.38 (Linux; U; Android 14)',
       context: { client: { hl: 'en', gl: 'US', clientName: 'ANDROID', clientVersion: '20.10.38' } }
+    },
+    {
+      name: 'ANDROID_TESTSUITE',
+      userAgent: 'com.google.android.youtube/20.10.38 (Linux; U; Android 14)',
+      context: { client: { hl: 'hi', gl: 'IN', clientName: 'ANDROID', clientVersion: '20.10.38' } }
     },
     {
       name: 'WEB',
@@ -91,7 +96,7 @@ async function fetchViaInnerTube(videoId) {
         headers: {
           'Content-Type': 'application/json',
           'User-Agent': config.userAgent,
-          'X-YouTube-Client-Name': String(config.name === 'ANDROID' ? 3 : 1),
+          'X-YouTube-Client-Name': String(config.name.startsWith('ANDROID') ? 3 : 1),
           'X-YouTube-Client-Version': config.context.client.clientVersion
         },
         body: JSON.stringify({
@@ -110,33 +115,40 @@ async function fetchViaInnerTube(videoId) {
       const captionTracks = findCaptionTracksInResponse(data);
       if (!captionTracks || captionTracks.length === 0) continue;
 
-      const selectedTrack = captionTracks.find(t =>
-        t.languageCode.startsWith('hi') ||
-        t.languageCode.startsWith('en') ||
-        t.languageCode.startsWith('or') ||
-        t.languageCode.includes('hi') ||
-        t.languageCode.includes('en')
-      ) || captionTracks[0];
-
-      const trackRes = await fetch(selectedTrack.baseUrl, {
-        headers: {
-          'User-Agent': config.userAgent
-        }
+      // Prioritize Hindi / English / Odia, but accept any track
+      const sortedTracks = [...captionTracks].sort((a, b) => {
+        const langA = (a.languageCode || '').toLowerCase();
+        const langB = (b.languageCode || '').toLowerCase();
+        const isPriorityA = langA.startsWith('hi') || langA.startsWith('en') || langA.startsWith('or');
+        const isPriorityB = langB.startsWith('hi') || langB.startsWith('en') || langB.startsWith('or');
+        if (isPriorityA && !isPriorityB) return -1;
+        if (!isPriorityA && isPriorityB) return 1;
+        return 0;
       });
-      
-      if (!trackRes.ok) continue;
-      const xmlText = await trackRes.text();
-      if (!xmlText || xmlText.length === 0) continue;
 
-      const parsed = YoutubeTranscript.parseTranscriptXml(xmlText, selectedTrack.languageCode);
-      if (!parsed || parsed.length === 0) continue;
+      for (const track of sortedTracks) {
+        if (!track.baseUrl) continue;
+        try {
+          const trackRes = await fetch(track.baseUrl, {
+            headers: {
+              'User-Agent': config.userAgent
+            }
+          });
+          if (!trackRes.ok) continue;
+          const xmlText = await trackRes.text();
+          if (!xmlText || xmlText.length === 0) continue;
 
-      return {
-        rawItems: parsed,
-        title,
-        author,
-        lengthSeconds
-      };
+          const parsed = YoutubeTranscript.parseTranscriptXml(xmlText, track.languageCode);
+          if (parsed && parsed.length > 0) {
+            return {
+              rawItems: parsed,
+              title,
+              author,
+              lengthSeconds
+            };
+          }
+        } catch (e) {}
+      }
     } catch (err) {
       console.error(`InnerTube client ${config.name} error:`, err.message);
     }
@@ -225,7 +237,7 @@ async function getYouTubeMetadata(videoId) {
 async function getYouTubeData(url, onProgressUpdate) {
   const videoId = extractVideoId(url);
   if (!videoId) {
-    throw new Error('Invalid YouTube URL. Please provide a valid YouTube video link or video ID.');
+    throw new Error('Invalid YouTube URL. Please paste a valid YouTube video URL (e.g. https://www.youtube.com/watch?v=...)');
   }
 
   if (onProgressUpdate) onProgressUpdate('video_detected');
@@ -236,7 +248,7 @@ async function getYouTubeData(url, onProgressUpdate) {
   let rawItems = [];
   let sourceLanguage = 'English / Hindi';
 
-  // 1. Primary Extractor: InnerTube Multi-Client (ANDROID + WEB)
+  // 1. Universal InnerTube Multi-Client Extractor
   const innerTubeRes = await fetchViaInnerTube(videoId);
   if (innerTubeRes && innerTubeRes.rawItems && innerTubeRes.rawItems.length > 0) {
     rawItems = innerTubeRes.rawItems;
@@ -247,7 +259,7 @@ async function getYouTubeData(url, onProgressUpdate) {
       metadata.durationFormatted = formatTime(innerTubeRes.lengthSeconds);
     }
   } else {
-    // 2. Secondary Extractor: YoutubeTranscript library with custom fetch
+    // 2. YoutubeTranscript Library Extractor (tries default lang first, then hi, then en)
     try {
       rawItems = await YoutubeTranscript.fetchTranscript(videoId, { fetch: vercelCustomFetch });
     } catch (e1) {
@@ -257,7 +269,8 @@ async function getYouTubeData(url, onProgressUpdate) {
         try {
           rawItems = await YoutubeTranscript.fetchTranscript(videoId, { fetch: vercelCustomFetch, lang: 'en' });
         } catch (e3) {
-          throw new Error('Could not extract captions or audio speech for this video. Please ensure the video has English or Hindi audio/captions enabled.');
+          console.error('[getYouTubeData Error] Caption extraction failed for videoId:', videoId, e3.message);
+          throw new Error(`Could not extract captions for video ID (${videoId}). Please check if the video has captions/subtitles enabled on YouTube.`);
         }
       }
     }
@@ -266,7 +279,7 @@ async function getYouTubeData(url, onProgressUpdate) {
   if (onProgressUpdate) onProgressUpdate('speech_detected');
 
   if (!rawItems || rawItems.length === 0) {
-    throw new Error('No spoken dialogue found for this YouTube video.');
+    throw new Error(`No spoken dialogue lines found for video ID (${videoId}).`);
   }
 
   // Detect spoken language & code-switching
