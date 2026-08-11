@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "build": "npx vite build client",
+    "render-build": "npm install && npx vite build client",
     "vercel-build": "npx vite build client"
   },
   "keywords": [

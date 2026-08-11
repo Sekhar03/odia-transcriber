@@ -1,6 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
+const { execSync } = require('child_process');
 const { getYouTubeData } = require('./services/youtubeService');
 const { translateLinesToTargetLanguage, translateSingleText } = require('./services/translateService');
 const { createOdiaPDF } = require('./services/pdfService');
@@ -11,6 +13,18 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// Ensure frontend build exists on cloud deployments (Render, Railway, Heroku)
+const distPath = path.join(__dirname, 'client/dist');
+if (!fs.existsSync(distPath)) {
+  console.log('[Cloud Deployment] Building React frontend bundle...');
+  try {
+    execSync('npx vite build client', { stdio: 'inherit' });
+    console.log('[Cloud Deployment] React frontend built successfully!');
+  } catch (err) {
+    console.error('[Cloud Deployment] Frontend build error:', err.message);
+  }
+}
 
 // API: Transcribe YouTube Video to Odia or English
 app.post('/api/transcribe', async (req, res) => {
@@ -87,7 +101,6 @@ app.post('/api/generate-pdf', (req, res) => {
 });
 
 // Serve static frontend build
-const distPath = path.join(__dirname, 'client/dist');
 app.use(express.static(distPath));
 
 app.use((req, res, next) => {
