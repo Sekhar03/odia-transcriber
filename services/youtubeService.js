@@ -32,6 +32,8 @@ function vercelCustomFetch(url, options = {}) {
     'Accept-Language': 'en-US,en;q=0.9,hi;q=0.8',
     'Cookie': 'SOCS=CAESEwgDEgk2ODE3ODc5OTAaAmVuIAEaBgiA_LyaBg; CONSENT=YES+cb.20210328-17-p0.en+FX+667',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Origin': 'https://www.youtube.com',
+    'Referer': 'https://www.youtube.com/',
     ...(options.headers || {})
   };
 
@@ -66,13 +68,13 @@ function parseUniversalCaptions(rawContent, lang = 'en') {
     } catch (e) {}
   }
 
-  // 2. Try YoutubeTranscript standard XML parser
+  // 2. YoutubeTranscript XML parser
   try {
     const ytParsed = YoutubeTranscript.parseTranscriptXml(rawContent, lang);
     if (ytParsed && ytParsed.length > 0) return ytParsed;
   } catch (e) {}
 
-  // 3. Fallback: srv3 format (<p t="ms" d="ms">...)
+  // 3. srv3 format (<p t="ms" d="ms">...)
   const pMatches = rawContent.matchAll(/<p\s+[^>]*t=["']?(\d+)["']?[^>]*>(.*?)<\/p>/gi);
   for (const m of pMatches) {
     const startMs = parseInt(m[1], 10);
@@ -89,7 +91,7 @@ function parseUniversalCaptions(rawContent, lang = 'en') {
   }
   if (results.length > 0) return results;
 
-  // 4. Fallback: classic XML format (<text start="...">...)
+  // 4. Classic XML format (<text start="...">...)
   const textMatches = rawContent.matchAll(/<text\s+[^>]*start=["']?([\d\.]+)["']?[^>]*>(.*?)<\/text>/gi);
   for (const m of textMatches) {
     const startSec = parseFloat(m[1]);
@@ -137,6 +139,9 @@ function findCaptionTracksInResponse(data) {
   return found;
 }
 
+/**
+ * Universal Multi-Client InnerTube Extractor (ANDROID, WEB, TVHTML5).
+ */
 async function fetchViaInnerTube(videoId) {
   const clientConfigs = [
     {
@@ -145,14 +150,14 @@ async function fetchViaInnerTube(videoId) {
       context: { client: { hl: 'en', gl: 'US', clientName: 'ANDROID', clientVersion: '20.10.38' } }
     },
     {
-      name: 'ANDROID_TESTSUITE',
-      userAgent: 'com.google.android.youtube/20.10.38 (Linux; U; Android 14)',
-      context: { client: { hl: 'hi', gl: 'IN', clientName: 'ANDROID', clientVersion: '20.10.38' } }
-    },
-    {
       name: 'WEB',
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
       context: { client: { hl: 'en', gl: 'US', clientName: 'WEB', clientVersion: '2.20240308.00.00' } }
+    },
+    {
+      name: 'TVHTML5',
+      userAgent: 'Mozilla/5.0 (SmartHub; SMART-TV; U; Linux/SmartTV) AppleWebKit/538.1',
+      context: { client: { hl: 'en', gl: 'US', clientName: 'TVHTML5', clientVersion: '7.20240308.00.00' } }
     }
   ];
 
@@ -164,7 +169,9 @@ async function fetchViaInnerTube(videoId) {
           'Content-Type': 'application/json',
           'User-Agent': config.userAgent,
           'X-YouTube-Client-Name': String(config.name.startsWith('ANDROID') ? 3 : 1),
-          'X-YouTube-Client-Version': config.context.client.clientVersion
+          'X-YouTube-Client-Version': config.context.client.clientVersion,
+          'Origin': 'https://www.youtube.com',
+          'Referer': 'https://www.youtube.com/'
         },
         body: JSON.stringify({
           context: config.context,
@@ -197,7 +204,9 @@ async function fetchViaInnerTube(videoId) {
         try {
           const trackRes = await fetch(track.baseUrl, {
             headers: {
-              'User-Agent': config.userAgent
+              'User-Agent': config.userAgent,
+              'Origin': 'https://www.youtube.com',
+              'Referer': 'https://www.youtube.com/'
             }
           });
           if (!trackRes.ok) continue;
@@ -325,18 +334,59 @@ async function getYouTubeData(url, onProgressUpdate) {
       metadata.durationFormatted = formatTime(innerTubeRes.lengthSeconds);
     }
   } else {
-    // 2. YoutubeTranscript Library Extractor
+    // 2. Watch Page HTML Scraping Fallback
     try {
-      rawItems = await YoutubeTranscript.fetchTranscript(videoId, { fetch: vercelCustomFetch });
-    } catch (e1) {
+      const watchRes = await vercelCustomFetch(`https://www.youtube.com/watch?v=${videoId}`);
+      const watchHtml = await watchRes.text();
+      const match = watchHtml.match(/ytInitialPlayerResponse\s*=\s*({.+?});/);
+      if (match) {
+        const pData = JSON.parse(match[1]);
+        const captionTracks = findCaptionTracksInResponse(pData);
+        if (captionTracks && captionTracks.length > 0) {
+          for (const tr of captionTracks) {
+            if (!tr.baseUrl) continue;
+            const trRes = await vercelCustomFetch(tr.baseUrl);
+            const txtData = await trRes.text();
+            const parsed = parseUniversalCaptions(txtData, tr.languageCode);
+            if (parsed && parsed.length > 0) {
+              rawItems = parsed;
+              break;
+            }
+          }
+        }
+      }
+    } catch (e2) {}
+
+    if (!rawItems || rawItems.length === 0) {
+      // 3. YoutubeTranscript Library Extractor
       try {
-        rawItems = await YoutubeTranscript.fetchTranscript(videoId, { fetch: vercelCustomFetch, lang: 'hi' });
-      } catch (e2) {
+        rawItems = await YoutubeTranscript.fetchTranscript(videoId, { fetch: vercelCustomFetch });
+      } catch (e3) {
         try {
-          rawItems = await YoutubeTranscript.fetchTranscript(videoId, { fetch: vercelCustomFetch, lang: 'en' });
-        } catch (e3) {
-          console.error('[getYouTubeData Error] Caption extraction failed for videoId:', videoId, e3.message);
-          throw new Error(`Could not extract captions for video ID (${videoId}). Please check if the video has captions/subtitles enabled on YouTube.`);
+          rawItems = await YoutubeTranscript.fetchTranscript(videoId, { fetch: vercelCustomFetch, lang: 'hi' });
+        } catch (e4) {
+          try {
+            rawItems = await YoutubeTranscript.fetchTranscript(videoId, { fetch: vercelCustomFetch, lang: 'en' });
+          } catch (e5) {
+            // 4. Direct TimedText Endpoints Fallback
+            const fallbacks = ['hi', 'en', 'or', 'a.hi', 'a.en'];
+            for (const fLang of fallbacks) {
+              try {
+                const directRes = await vercelCustomFetch(`https://www.youtube.com/api/timedtext?v=${videoId}&lang=${fLang}&fmt=srv1`);
+                const directTxt = await directRes.text();
+                const parsed = parseUniversalCaptions(directTxt, fLang);
+                if (parsed && parsed.length > 0) {
+                  rawItems = parsed;
+                  break;
+                }
+              } catch (e6) {}
+            }
+
+            if (!rawItems || rawItems.length === 0) {
+              console.error('[getYouTubeData Error] Caption extraction failed for videoId:', videoId);
+              throw new Error(`Could not extract captions for video ID (${videoId}). Please check if the video has captions/subtitles enabled on YouTube.`);
+            }
+          }
         }
       }
     }
