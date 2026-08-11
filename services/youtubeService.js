@@ -22,6 +22,10 @@ function formatTime(seconds) {
   return `${padMins}:${padSecs}`;
 }
 
+/**
+ * Custom fetch function with YouTube Consent cookies & desktop headers.
+ * Bypasses YouTube datacenter IP blocks on Vercel Serverless Functions.
+ */
 function vercelCustomFetch(url, options = {}) {
   const headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
@@ -36,7 +40,7 @@ function vercelCustomFetch(url, options = {}) {
 
 /**
  * Native InnerTube Android API Extraction.
- * 100% resilient on Vercel / AWS Lambda Serverless Functions.
+ * Uses vercelCustomFetch headers when retrieving timedtext XML.
  */
 async function fetchViaInnerTube(videoId) {
   try {
@@ -69,11 +73,19 @@ async function fetchViaInnerTube(videoId) {
     const captionTracks = data?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
     if (!Array.isArray(captionTracks) || captionTracks.length === 0) return null;
 
-    const selectedTrack = captionTracks.find(t => t.languageCode === 'hi' || t.languageCode === 'en' || t.languageCode === 'or') || captionTracks[0];
+    const selectedTrack = captionTracks.find(t =>
+      t.languageCode.startsWith('hi') ||
+      t.languageCode.startsWith('en') ||
+      t.languageCode.startsWith('or') ||
+      t.languageCode.includes('hi') ||
+      t.languageCode.includes('en')
+    ) || captionTracks[0];
 
-    const trackRes = await fetch(selectedTrack.baseUrl);
+    const trackRes = await vercelCustomFetch(selectedTrack.baseUrl);
     if (!trackRes.ok) return null;
     const xmlText = await trackRes.text();
+
+    if (!xmlText || xmlText.length === 0) return null;
 
     const parsed = YoutubeTranscript.parseTranscriptXml(xmlText, selectedTrack.languageCode);
     if (!parsed || parsed.length === 0) return null;
@@ -181,7 +193,7 @@ async function getYouTubeData(url, onProgressUpdate) {
   let rawItems = [];
   let sourceLanguage = 'English / Hindi';
 
-  // 1. Primary Extractor: Official InnerTube Android API (100% resilient on Vercel)
+  // 1. Primary Extractor: Official InnerTube Android API with headers
   const innerTubeRes = await fetchViaInnerTube(videoId);
   if (innerTubeRes && innerTubeRes.rawItems && innerTubeRes.rawItems.length > 0) {
     rawItems = innerTubeRes.rawItems;
@@ -192,15 +204,15 @@ async function getYouTubeData(url, onProgressUpdate) {
       metadata.durationFormatted = formatTime(innerTubeRes.lengthSeconds);
     }
   } else {
-    // 2. Secondary Extractor: YoutubeTranscript with Consent Cookie fetch
+    // 2. Secondary Extractor: YoutubeTranscript default fetch (accepts ANY language track)
     try {
-      rawItems = await YoutubeTranscript.fetchTranscript(videoId, { fetch: vercelCustomFetch, lang: 'en' });
+      rawItems = await YoutubeTranscript.fetchTranscript(videoId, { fetch: vercelCustomFetch });
     } catch (e1) {
       try {
         rawItems = await YoutubeTranscript.fetchTranscript(videoId, { fetch: vercelCustomFetch, lang: 'hi' });
       } catch (e2) {
         try {
-          rawItems = await YoutubeTranscript.fetchTranscript(videoId, { fetch: vercelCustomFetch });
+          rawItems = await YoutubeTranscript.fetchTranscript(videoId, { fetch: vercelCustomFetch, lang: 'en' });
         } catch (e3) {
           throw new Error('Could not extract captions or audio speech for this video. Please ensure the video has English or Hindi audio/captions enabled.');
         }
