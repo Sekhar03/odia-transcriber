@@ -1,6 +1,8 @@
 const { YoutubeTranscript } = require('youtube-transcript');
 const he = require('he');
 
+const INNERTUBE_API_KEY = 'AIzaSyAO_FJ2Slv5QZ0_A9-x_M4_J8-M';
+
 function extractVideoId(url) {
   if (!url) return null;
   const trimmed = url.trim();
@@ -138,51 +140,58 @@ function findCaptionTracksInResponse(data) {
 }
 
 /**
- * Universal Mobile InnerTube Extractor.
- * Uses clean Android native app headers for 100% cloud platform authorization.
+ * Universal Multi-Client InnerTube Extractor (ANDROID, WEB, TVHTML5).
  */
 async function fetchViaInnerTube(videoId) {
   const clientConfigs = [
     {
       name: 'ANDROID',
+      url: `https://www.youtube.com/youtubei/v1/player?key=${INNERTUBE_API_KEY}`,
       userAgent: 'com.google.android.youtube/20.10.38 (Linux; U; Android 14)',
-      clientVersion: '20.10.38'
+      context: { client: { hl: 'en', gl: 'US', clientName: 'ANDROID', clientVersion: '20.10.38' } }
     },
     {
-      name: 'ANDROID_LEGACY',
-      userAgent: 'com.google.android.youtube/19.09.3 (Linux; U; Android 14)',
-      clientVersion: '19.09.3'
+      name: 'ANDROID_TESTSUITE',
+      url: 'https://www.youtube.com/youtubei/v1/player?prettyPrint=false',
+      userAgent: 'com.google.android.youtube/20.10.38 (Linux; U; Android 14)',
+      context: { client: { hl: 'hi', gl: 'IN', clientName: 'ANDROID', clientVersion: '20.10.38' } }
+    },
+    {
+      name: 'WEB',
+      url: `https://www.youtube.com/youtubei/v1/player?key=${INNERTUBE_API_KEY}`,
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      context: { client: { hl: 'en', gl: 'US', clientName: 'WEB', clientVersion: '2.20240308.00.00' } }
     }
   ];
 
   for (const config of clientConfigs) {
     try {
-      const apiUrl = 'https://www.youtube.com/youtubei/v1/player?prettyPrint=false';
-      const res = await fetch(apiUrl, {
+      const res = await fetch(config.url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'User-Agent': config.userAgent
         },
         body: JSON.stringify({
-          context: {
-            client: {
-              clientName: 'ANDROID',
-              clientVersion: config.clientVersion
-            }
-          },
+          context: config.context,
           videoId: videoId
         })
       });
 
-      if (!res.ok) continue;
+      if (!res.ok) {
+        console.log(`[InnerTube Debug] Client ${config.name} HTTP error: ${res.status}`);
+        continue;
+      }
       const data = await res.json();
 
+      const playability = data?.playabilityStatus?.status;
       const title = data?.videoDetails?.title || '';
       const author = data?.videoDetails?.author || '';
       const lengthSeconds = parseInt(data?.videoDetails?.lengthSeconds || '0', 10);
 
       const captionTracks = findCaptionTracksInResponse(data);
+      console.log(`[InnerTube Debug] Client ${config.name} Playability: ${playability} | Tracks: ${captionTracks ? captionTracks.length : 0}`);
+
       if (!captionTracks || captionTracks.length === 0) continue;
 
       const sortedTracks = [...captionTracks].sort((a, b) => {
@@ -203,12 +212,19 @@ async function fetchViaInnerTube(videoId) {
               'User-Agent': config.userAgent
             }
           });
-          if (!trackRes.ok) continue;
+          if (!trackRes.ok) {
+            console.log(`[InnerTube Track Debug] Fetch track HTTP error: ${trackRes.status}`);
+            continue;
+          }
           const xmlText = await trackRes.text();
-          if (!xmlText || xmlText.length === 0) continue;
+          if (!xmlText || xmlText.length === 0) {
+            console.log(`[InnerTube Track Debug] Empty track XML response for lang: ${track.languageCode}`);
+            continue;
+          }
 
           const parsed = parseUniversalCaptions(xmlText, track.languageCode);
           if (parsed && parsed.length > 0) {
+            console.log(`[InnerTube SUCCESS] Extracted ${parsed.length} items using client ${config.name} and track ${track.languageCode}`);
             return {
               rawItems: parsed,
               title,
@@ -216,7 +232,9 @@ async function fetchViaInnerTube(videoId) {
               lengthSeconds
             };
           }
-        } catch (e) {}
+        } catch (e) {
+          console.log(`[InnerTube Track Error] ${e.message}`);
+        }
       }
     } catch (err) {
       console.error(`InnerTube client ${config.name} error:`, err.message);
@@ -344,12 +362,15 @@ async function getYouTubeData(url, onProgressUpdate) {
             const parsed = parseUniversalCaptions(txtData, tr.languageCode);
             if (parsed && parsed.length > 0) {
               rawItems = parsed;
+              console.log(`[Watch HTML Fallback SUCCESS] Extracted ${parsed.length} items`);
               break;
             }
           }
         }
       }
-    } catch (e2) {}
+    } catch (e2) {
+      console.log('[Watch HTML Fallback Error]', e2.message);
+    }
 
     if (!rawItems || rawItems.length === 0) {
       // 3. YoutubeTranscript Library Extractor
@@ -371,6 +392,7 @@ async function getYouTubeData(url, onProgressUpdate) {
                 const parsed = parseUniversalCaptions(directTxt, fLang);
                 if (parsed && parsed.length > 0) {
                   rawItems = parsed;
+                  console.log(`[Direct Endpoint Fallback SUCCESS] Extracted ${parsed.length} items for lang ${fLang}`);
                   break;
                 }
               } catch (e6) {}
