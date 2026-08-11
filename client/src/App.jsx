@@ -22,6 +22,12 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import './index.css';
+import {
+  extractVideoId,
+  extractCaptionsInBrowser,
+  isGoogleAuthConfigured,
+  requestGoogleAccessToken
+} from './youtubeCaptionClient';
 
 const YoutubeIcon = ({ className = "w-6 h-6" }) => (
   <svg className={className} viewBox="0 0 24 24" fill="currentColor">
@@ -82,7 +88,67 @@ export default function App() {
   const [pdfGenerating, setPdfGenerating] = useState(false);
 
   const [copied, setCopied] = useState(false);
+  const [googleAccessToken, setGoogleAccessToken] = useState(null);
+  const [googleUserLabel, setGoogleUserLabel] = useState('');
   const iframeRef = useRef(null);
+
+  const isCloudDeploy = typeof window !== 'undefined'
+    && (window.location.hostname.includes('vercel.app') || isGoogleAuthConfigured());
+
+  const ensureGoogleAccessToken = async () => {
+    if (googleAccessToken) return googleAccessToken;
+    const token = await requestGoogleAccessToken();
+    setGoogleAccessToken(token);
+    setGoogleUserLabel('Google account connected');
+    return token;
+  };
+
+  const transcribeFromBrowserCaptions = async (finalUrl, selectedLang, progressTimer) => {
+    const videoId = extractVideoId(finalUrl);
+    if (!videoId) {
+      throw new Error('Invalid YouTube URL. Please paste a valid YouTube video URL.');
+    }
+
+    const accessToken = await ensureGoogleAccessToken();
+    const extracted = await extractCaptionsInBrowser(videoId, accessToken);
+
+    const res = await fetch(`${API_BASE_URL}/api/transcribe-lines`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        rawItems: extracted.rawItems,
+        metadata: extracted.metadata,
+        sourceLanguage: extracted.sourceLanguage,
+        targetLang: selectedLang
+      })
+    });
+
+    const data = await res.json();
+    clearInterval(progressTimer);
+
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to translate extracted captions.');
+    }
+
+    return data;
+  };
+
+  const transcribeFromServer = async (finalUrl, selectedLang, progressTimer) => {
+    const res = await fetch(`${API_BASE_URL}/api/transcribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: finalUrl, targetLang: selectedLang })
+    });
+
+    const data = await res.json();
+    clearInterval(progressTimer);
+
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to transcribe YouTube video.');
+    }
+
+    return data;
+  };
 
   const simulateProgress = () => {
     setCompletedSteps([]);
@@ -111,17 +177,20 @@ export default function App() {
     const progressTimer = simulateProgress();
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/transcribe`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: finalUrl, targetLang: selectedLang })
-      });
+      let data;
 
-      const data = await res.json();
-      clearInterval(progressTimer);
-
-      if (!data.success) {
-        throw new Error(data.error || 'Failed to transcribe YouTube video.');
+      if (isCloudDeploy) {
+        data = await transcribeFromBrowserCaptions(finalUrl, selectedLang, progressTimer);
+      } else {
+        try {
+          data = await transcribeFromServer(finalUrl, selectedLang, progressTimer);
+        } catch (serverErr) {
+          if (isGoogleAuthConfigured()) {
+            data = await transcribeFromBrowserCaptions(finalUrl, selectedLang, progressTimer);
+          } else {
+            throw serverErr;
+          }
+        }
       }
 
       setMetadata(data.metadata);
@@ -137,7 +206,11 @@ export default function App() {
       });
     } catch (err) {
       clearInterval(progressTimer);
-      setError(err.message || 'An error occurred during transcription.');
+      if (isCloudDeploy && !isGoogleAuthConfigured()) {
+        setError('Cloud mode requires Google Sign-In. Add VITE_GOOGLE_CLIENT_ID in Vercel environment variables and redeploy.');
+      } else {
+        setError(err.message || 'An error occurred during transcription.');
+      }
     } finally {
       setLoading(false);
     }
@@ -376,6 +449,34 @@ export default function App() {
             </button>
           ))}
         </div>
+
+        {isCloudDeploy && (
+          <div className="mt-1 flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-950/20 px-4 py-3 text-xs text-amber-100">
+            <div className="flex items-start gap-2 flex-1">
+              <Info className="w-4 h-4 mt-0.5 shrink-0 text-amber-300" />
+              <p>
+                On cloud deploy, captions are fetched with <strong>your Google/YouTube account</strong> in your browser, then translated on the server.
+                {isGoogleAuthConfigured() ? '' : ' Set `VITE_GOOGLE_CLIENT_ID` in Vercel env vars to enable sign-in.'}
+              </p>
+            </div>
+            {isGoogleAuthConfigured() && (
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    setError(null);
+                    await ensureGoogleAccessToken();
+                  } catch (err) {
+                    setError(err.message || 'Google sign-in failed.');
+                  }
+                }}
+                className="shrink-0 rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 font-semibold text-amber-100 hover:bg-amber-500/20 transition"
+              >
+                {googleUserLabel || 'Connect Google Account'}
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Processing Pipeline Checklist */}
         {loading && (

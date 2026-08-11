@@ -3,7 +3,7 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const { execSync } = require('child_process');
-const { getYouTubeData } = require('./services/youtubeService');
+const { getYouTubeData, buildYouTubeDataFromRawItems } = require('./services/youtubeService');
 const { translateLinesToTargetLanguage, translateSingleText } = require('./services/translateService');
 const { createOdiaPDF } = require('./services/pdfService');
 
@@ -79,6 +79,38 @@ app.post('/api/transcribe', async (req, res) => {
       error: err.message,
       debugLogs
     });
+  }
+});
+
+// API: Translate pre-extracted caption lines (from browser-side Google auth)
+app.post('/api/transcribe-lines', async (req, res) => {
+  try {
+    const { rawItems = [], metadata = {}, sourceLanguage, targetLang = 'or' } = req.body;
+
+    if (!rawItems.length) {
+      return res.status(400).json({ success: false, error: 'No caption lines provided.' });
+    }
+
+    const progressLogs = [];
+    const onProgressUpdate = (step) => {
+      console.log(`[Pipeline Progress] Step: ${step}`);
+      progressLogs.push(step);
+    };
+
+    const ytData = await buildYouTubeDataFromRawItems(rawItems, metadata, sourceLanguage, onProgressUpdate);
+    const translatedLines = await translateLinesToTargetLanguage(ytData.lines, targetLang, onProgressUpdate);
+
+    return res.json({
+      success: true,
+      metadata: ytData.metadata,
+      sourceLanguage: ytData.sourceLanguage,
+      targetLang,
+      lines: translatedLines.map(l => ({ ...l, odiaText: l.translatedText })),
+      progressSteps: progressLogs
+    });
+  } catch (err) {
+    console.error('[API /api/transcribe-lines Error]', err.message);
+    return res.status(500).json({ success: false, error: err.message });
   }
 });
 

@@ -821,7 +821,6 @@ async function getYouTubeData(url, onProgressUpdate, debugLogs = []) {
   if (onProgressUpdate) onProgressUpdate('audio_extracted');
 
   let rawItems = [];
-  let sourceLanguage = 'English / Hindi';
 
   const customYoutubeFetch = (fetchUrl, options = {}) =>
     youtubeFetch(fetchUrl, YOUTUBE_FETCH_PROFILES[1], options);
@@ -907,8 +906,14 @@ async function getYouTubeData(url, onProgressUpdate, debugLogs = []) {
 
   if (onProgressUpdate) onProgressUpdate('speech_detected');
 
+  const processed = processRawItemsToYouTubeData(rawItems, metadata);
+  if (onProgressUpdate) onProgressUpdate('transcript_generated');
+  return processed;
+}
+
+function processRawItemsToYouTubeData(rawItems, metadata, sourceLanguageOverride) {
   const fullTextSample = rawItems.slice(0, 15).map(i => i.text).join(' ');
-  sourceLanguage = detectSpokenLanguage(fullTextSample);
+  const sourceLanguage = sourceLanguageOverride || detectSpokenLanguage(fullTextSample);
 
   const parsedLines = rawItems.map(item => {
     const startSec = (item.offset || 0) / 1000;
@@ -958,8 +963,6 @@ async function getYouTubeData(url, onProgressUpdate, debugLogs = []) {
     metadata.durationFormatted = formatTime(metadata.lengthSeconds);
   }
 
-  if (onProgressUpdate) onProgressUpdate('transcript_generated');
-
   return {
     metadata,
     sourceLanguage,
@@ -967,8 +970,16 @@ async function getYouTubeData(url, onProgressUpdate, debugLogs = []) {
   };
 }
 
+async function buildYouTubeDataFromRawItems(rawItems, metadata, sourceLanguageOverride, onProgressUpdate) {
+  if (onProgressUpdate) onProgressUpdate('speech_detected');
+  const result = processRawItemsToYouTubeData(rawItems, metadata, sourceLanguageOverride);
+  if (onProgressUpdate) onProgressUpdate('transcript_generated');
+  return result;
+}
+
 module.exports = {
   extractVideoId,
   formatTime,
-  getYouTubeData
+  getYouTubeData,
+  buildYouTubeDataFromRawItems
 };
