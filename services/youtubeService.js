@@ -140,8 +140,9 @@ function findCaptionTracksInResponse(data) {
 }
 
 /**
- * Universal Mobile InnerTube Extractor.
- * Uses vercelCustomFetch (SOCS cookies + headers) for 100% cloud platform authorization.
+ * Universal Dual-Header InnerTube Extractor.
+ * Step 1: Android Native Headers for InnerTube POST.
+ * Step 2: Desktop Consent Headers for TimedText Track GET.
  */
 async function fetchViaInnerTube(videoId) {
   const clientConfigs = [
@@ -149,33 +150,43 @@ async function fetchViaInnerTube(videoId) {
       name: 'ANDROID',
       url: `https://www.youtube.com/youtubei/v1/player?key=${INNERTUBE_API_KEY}`,
       userAgent: 'com.google.android.youtube/20.10.38 (Linux; U; Android 14)',
-      context: { client: { hl: 'en', gl: 'US', clientName: 'ANDROID', clientVersion: '20.10.38' } }
+      clientVersion: '20.10.38',
+      clientName: 'ANDROID'
     },
     {
       name: 'ANDROID_TESTSUITE',
       url: 'https://www.youtube.com/youtubei/v1/player?prettyPrint=false',
       userAgent: 'com.google.android.youtube/20.10.38 (Linux; U; Android 14)',
-      context: { client: { hl: 'hi', gl: 'IN', clientName: 'ANDROID', clientVersion: '20.10.38' } }
-    },
-    {
-      name: 'WEB',
-      url: `https://www.youtube.com/youtubei/v1/player?key=${INNERTUBE_API_KEY}`,
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-      context: { client: { hl: 'en', gl: 'US', clientName: 'WEB', clientVersion: '2.20240308.00.00' } }
+      clientVersion: '20.10.38',
+      clientName: 'ANDROID'
     }
   ];
 
   for (const config of clientConfigs) {
     try {
-      const res = await vercelCustomFetch(config.url, {
+      // Step 1: Android Native App Headers for Player API
+      const res = await fetch(config.url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'User-Agent': config.userAgent
+          'User-Agent': config.userAgent,
+          'X-YouTube-Client-Name': '3',
+          'X-YouTube-Client-Version': config.clientVersion
         },
         body: JSON.stringify({
-          context: config.context,
-          videoId: videoId
+          context: {
+            client: {
+              hl: 'en',
+              gl: 'US',
+              clientName: config.clientName,
+              clientVersion: config.clientVersion,
+              androidSdkVersion: 34
+            },
+            user: { lockedSafetyMode: false }
+          },
+          videoId: videoId,
+          racyCheckOk: true,
+          contentCheckOk: true
         })
       });
 
@@ -208,7 +219,7 @@ async function fetchViaInnerTube(videoId) {
       for (const track of sortedTracks) {
         if (!track.baseUrl) continue;
         try {
-          // Use vercelCustomFetch for timedtext track URL
+          // Step 2: Desktop Consent Headers for TimedText Track GET
           const trackRes = await vercelCustomFetch(track.baseUrl);
           if (!trackRes.ok) {
             console.log(`[InnerTube Track Debug] Fetch track HTTP error: ${trackRes.status}`);
