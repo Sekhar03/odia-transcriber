@@ -35,7 +35,7 @@ function sanitizeOdiaForPdf(text) {
   if (!text) return '';
   let str = String(text);
 
-  // 1. Punctuation & Smart Quotes Normalization
+  // Punctuation & Smart Quotes Normalization
   str = str.replace(/[\u201C\u201D\u201E\u201F]/g, '"')
            .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
            .replace(/\u2026/g, '...')
@@ -44,16 +44,16 @@ function sanitizeOdiaForPdf(text) {
            .replace(/[♪♫★✓✔▪►]/g, '')
            .replace(/\|\|\|?/g, ' ');
 
-  // 2. Transliterate Hindi place names
+  // Transliterate Hindi place names
   Object.keys(HINDI_TO_ODIA_MAP).forEach(k => {
     str = str.replace(new RegExp(k, 'g'), HINDI_TO_ODIA_MAP[k]);
   });
 
-  // 3. Strip remaining Devanagari & control characters
+  // Strip Devanagari & control characters
   str = str.replace(/[\u0900-\u097F]/g, '');
   str = str.replace(/[\u2000-\u206F\u20A0-\u20CF\uFEFF]/g, '');
 
-  // 4. Strict character filter: KEEP ONLY Odia Unicode (\u0B00-\u0B7F) and printable ASCII (\x20-\x7E)
+  // Keep ONLY Odia Unicode (\u0B00-\u0B7F) and printable ASCII (\x20-\x7E)
   str = str.replace(/[^\u0B00-\u0B7F\x20-\x7E]/g, '');
 
   return str.replace(/\s+/g, ' ').trim();
@@ -62,6 +62,11 @@ function sanitizeOdiaForPdf(text) {
 async function translateSingleText(text, targetLang = 'or') {
   if (!text || !text.trim()) return '';
   const cleanedInput = cleanAsrArtifacts(text);
+
+  // If target language is English and text is already in English (ASCII), return clean input
+  if (targetLang === 'en' && /^[\x00-\x7F\s.,!?:;()"-]+$/.test(cleanedInput)) {
+    return cleanedInput;
+  }
 
   try {
     const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=` + encodeURIComponent(cleanedInput);
@@ -79,24 +84,27 @@ async function translateSingleText(text, targetLang = 'or') {
       translatedText = data[0].map(item => item[0]).filter(Boolean).join('');
     }
 
-    Object.keys(TECHNICAL_TERM_MAP).forEach(term => {
-      const regex = new RegExp(`\\b${term}\\b`, 'gi');
-      if (regex.test(cleanedInput) && !translatedText.includes(`(${term})`)) {
-        translatedText = translatedText.replace(new RegExp(term, 'gi'), TECHNICAL_TERM_MAP[term]);
-      }
-    });
+    if (targetLang === 'or') {
+      Object.keys(TECHNICAL_TERM_MAP).forEach(term => {
+        const regex = new RegExp(`\\b${term}\\b`, 'gi');
+        if (regex.test(cleanedInput) && !translatedText.includes(`(${term})`)) {
+          translatedText = translatedText.replace(new RegExp(term, 'gi'), TECHNICAL_TERM_MAP[term]);
+        }
+      });
+      return sanitizeOdiaForPdf(translatedText);
+    }
 
-    return sanitizeOdiaForPdf(translatedText);
+    return cleanAsrArtifacts(translatedText);
   } catch (err) {
     console.error('Translation error:', err.message);
-    return sanitizeOdiaForPdf(cleanedInput);
+    return targetLang === 'or' ? sanitizeOdiaForPdf(cleanedInput) : cleanedInput;
   }
 }
 
-async function translateLinesToOdia(lines, onProgressUpdate) {
+async function translateLinesToTargetLanguage(lines, targetLang = 'or', onProgressUpdate) {
   if (!lines || lines.length === 0) return [];
 
-  if (onProgressUpdate) onProgressUpdate('converting_to_odia');
+  if (onProgressUpdate) onProgressUpdate(targetLang === 'en' ? 'converting_to_english' : 'converting_to_odia');
 
   const batchSize = 12;
   const chunks = [];
@@ -112,27 +120,27 @@ async function translateLinesToOdia(lines, onProgressUpdate) {
     await Promise.all(activeGroup.map(async (group) => {
       const joinedText = group.items.map(l => cleanAsrArtifacts(l.text).replace(/\|\|\|/g, '')).join(' ||| ');
       try {
-        const translatedBatchStr = await translateSingleText(joinedText, 'or');
+        const translatedBatchStr = await translateSingleText(joinedText, targetLang);
         const parts = translatedBatchStr.split(/\s*\|\|\|\s*/);
 
         for (let j = 0; j < group.items.length; j++) {
           const lineIndex = group.startIndex + j;
-          const translatedPart = (parts[j] && parts[j].trim()) ? parts[j].trim() : await translateSingleText(group.items[j].text, 'or');
+          const translatedPart = (parts[j] && parts[j].trim()) ? parts[j].trim() : await translateSingleText(group.items[j].text, targetLang);
           
           translatedLines[lineIndex] = {
             ...translatedLines[lineIndex],
             text: cleanAsrArtifacts(group.items[j].text),
-            odiaText: sanitizeOdiaForPdf(translatedPart)
+            translatedText: targetLang === 'or' ? sanitizeOdiaForPdf(translatedPart) : cleanAsrArtifacts(translatedPart)
           };
         }
       } catch (e) {
         for (let j = 0; j < group.items.length; j++) {
           const lineIndex = group.startIndex + j;
-          const odia = await translateSingleText(group.items[j].text, 'or');
+          const translatedPart = await translateSingleText(group.items[j].text, targetLang);
           translatedLines[lineIndex] = {
             ...translatedLines[lineIndex],
             text: cleanAsrArtifacts(group.items[j].text),
-            odiaText: sanitizeOdiaForPdf(odia)
+            translatedText: targetLang === 'or' ? sanitizeOdiaForPdf(translatedPart) : cleanAsrArtifacts(translatedPart)
           };
         }
       }
@@ -146,5 +154,5 @@ module.exports = {
   cleanAsrArtifacts,
   sanitizeOdiaForPdf,
   translateSingleText,
-  translateLinesToOdia
+  translateLinesToTargetLanguage
 };

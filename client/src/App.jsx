@@ -17,7 +17,8 @@ import {
   ExternalLink,
   Users,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Globe
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import './index.css';
@@ -51,12 +52,13 @@ const PIPELINE_STEPS = [
   { id: 'audio_extracted', label: 'Audio extracted' },
   { id: 'speech_detected', label: 'Speech detected' },
   { id: 'transcript_generated', label: 'Transcript generated' },
-  { id: 'converting_to_odia', label: 'Converted to Odia' },
+  { id: 'converting_to_target', label: 'Converted dialogue' },
   { id: 'pdf_generated', label: 'PDF ready' }
 ];
 
 export default function App() {
   const [url, setUrl] = useState('');
+  const [targetLang, setTargetLang] = useState('or'); // 'or' | 'en'
   const [loading, setLoading] = useState(false);
   const [completedSteps, setCompletedSteps] = useState([]);
   const [error, setError] = useState(null);
@@ -94,7 +96,7 @@ export default function App() {
     return interval;
   };
 
-  const handleTranscribe = async (targetUrl = url) => {
+  const handleTranscribe = async (targetUrl = url, selectedLang = targetLang) => {
     const finalUrl = targetUrl.trim();
     if (!finalUrl) {
       setError('Please paste a valid YouTube video link.');
@@ -109,7 +111,7 @@ export default function App() {
       const res = await fetch('/api/transcribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: finalUrl })
+        body: JSON.stringify({ url: finalUrl, targetLang: selectedLang })
       });
 
       const data = await res.json();
@@ -140,18 +142,18 @@ export default function App() {
 
   const handleSampleClick = (sampleUrl) => {
     setUrl(sampleUrl);
-    handleTranscribe(sampleUrl);
+    handleTranscribe(sampleUrl, targetLang);
   };
 
-  const handleLineEdit = (id, newOdiaText) => {
+  const handleLineEdit = (id, newText) => {
     setLines((prev) =>
-      prev.map((line) => (line.id === id ? { ...line, odiaText: newOdiaText } : line))
+      prev.map((line) => (line.id === id ? { ...line, odiaText: newText } : line))
     );
   };
 
-  const handleCopyOdiaText = () => {
-    const odiaFullText = lines.map((l) => `[${l.startFormatted}] ${l.speaker}: ${l.odiaText}`).join('\n');
-    navigator.clipboard.writeText(odiaFullText);
+  const handleCopyText = () => {
+    const fullText = lines.map((l) => `[${l.startFormatted}] ${l.speaker}: ${l.odiaText}`).join('\n');
+    navigator.clipboard.writeText(fullText);
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
   };
@@ -169,7 +171,8 @@ export default function App() {
           lines,
           pdfLayout,
           pdfTitle: pdfTitle || metadata.title,
-          sourceLanguage
+          sourceLanguage,
+          targetLang
         })
       });
 
@@ -182,11 +185,11 @@ export default function App() {
       const downloadUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = downloadUrl;
-      const cleanTitle = (pdfTitle || metadata?.title || 'YouTube_Odia_Dialogue')
+      const cleanTitle = (pdfTitle || metadata?.title || `YouTube_Dialogue_${targetLang.toUpperCase()}`)
         .replace(/[^\x00-\x7F]/g, '')
         .replace(/[^a-zA-Z0-9_-]/g, '_')
         .replace(/_+/g, '_')
-        .substring(0, 40) || 'YouTube_Odia_Dialogue';
+        .substring(0, 40) || `YouTube_Dialogue_${targetLang.toUpperCase()}`;
       link.download = `${cleanTitle}.pdf`;
       document.body.appendChild(link);
       link.click();
@@ -215,12 +218,12 @@ export default function App() {
       })
       .join('\n');
 
-    downloadFile(srtContent, `${metadata.title}_Odia.srt`, 'text/plain');
+    downloadFile(srtContent, `${metadata.title}_${targetLang.toUpperCase()}.srt`, 'text/plain');
   };
 
   const exportTXT = () => {
     const txtContent = lines.map((l) => `[${l.startFormatted}] ${l.speaker}:\n${l.odiaText}`).join('\n\n');
-    downloadFile(txtContent, `${metadata.title}_Odia.txt`, 'text/plain');
+    downloadFile(txtContent, `${metadata.title}_${targetLang.toUpperCase()}.txt`, 'text/plain');
   };
 
   const formatSrtTime = (sec) => {
@@ -269,21 +272,39 @@ export default function App() {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-white">
-                OdiaTube AI Transcriber
+                YouTube AI Transcriber
               </h1>
-              <span className="badge badge-teal">ଓଡ଼ିଆ PDF</span>
+              <span className="badge badge-teal">Odia & English PDF</span>
             </div>
             <p className="text-slate-400 text-sm md:text-base mt-1 odia-text">
-              Transcribe complete YouTube dialogue (English, Hindi & Hinglish) into natural Odia PDF with speaker turns.
+              Transcribe complete YouTube dialogue (English, Hindi & Hinglish) into Odia (ଓଡ଼ିଆ) or English PDF with speaker turns.
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-3 bg-slate-900/60 p-3 rounded-xl border border-slate-700/50">
-          <Languages className="w-5 h-5 text-teal-400" />
+        {/* Target Language Toggle */}
+        <div className="flex items-center gap-3 bg-slate-900/80 p-3 rounded-xl border border-slate-700/50">
+          <Globe className="w-5 h-5 text-teal-400" />
           <div className="text-xs">
-            <span className="text-slate-400 block">AI Speech & Translation Engine</span>
-            <span className="text-teal-300 font-bold odia-text">AI4Bharat IndicConformer + IndicTrans2 1B</span>
+            <span className="text-slate-400 block mb-1">Target Language:</span>
+            <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
+              <button
+                onClick={() => setTargetLang('or')}
+                className={`px-2.5 py-1 rounded text-xs font-bold transition ${
+                  targetLang === 'or' ? 'bg-teal-600 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                ଓଡ଼ିଆ (Odia)
+              </button>
+              <button
+                onClick={() => setTargetLang('en')}
+                className={`px-2.5 py-1 rounded text-xs font-bold transition ${
+                  targetLang === 'en' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                English
+              </button>
+            </div>
           </div>
         </div>
       </header>
@@ -328,7 +349,7 @@ export default function App() {
             ) : (
               <>
                 <Sparkles className="w-5 h-5" />
-                <span>Start Transcription</span>
+                <span>Transcribe ({targetLang === 'or' ? 'Odia' : 'English'})</span>
               </>
             )}
           </button>
@@ -359,7 +380,7 @@ export default function App() {
             <div className="flex items-center justify-between">
               <h4 className="text-sm font-bold text-teal-300 flex items-center gap-2">
                 <RefreshCw className="w-4 h-4 animate-spin text-teal-400" />
-                Processing Pipeline:
+                Processing Pipeline ({targetLang === 'or' ? 'Odia Target' : 'English Target'}):
               </h4>
               <span className="text-xs font-mono text-teal-400 bg-teal-950/80 px-2.5 py-1 rounded border border-teal-800">
                 Parallel AI Engine Active
@@ -420,7 +441,7 @@ export default function App() {
             {/* Video Metadata Card */}
             <div className="glass-panel p-5 flex flex-col gap-4">
               <div>
-                <span className="badge badge-amber mb-2">{sourceLanguage}</span>
+                <span className="badge badge-amber mb-2">{sourceLanguage} Source</span>
                 <h2 className="text-lg font-bold text-white leading-snug line-clamp-2">
                   {metadata.title}
                 </h2>
@@ -457,7 +478,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* Right Column: Odia Dialogue Workspace */}
+          {/* Right Column: Dialogue Workspace */}
           <div className="lg:col-span-7 flex flex-col gap-6">
             <div className="glass-panel p-6 flex flex-col gap-6">
               {/* Workspace Header Controls */}
@@ -465,10 +486,10 @@ export default function App() {
                 <div>
                   <h3 className="text-xl font-bold text-white flex items-center gap-2">
                     <FileText className="w-5 h-5 text-teal-400" />
-                    <span>Odia Transcript</span>
+                    <span>{targetLang === 'or' ? 'Odia Transcript' : 'English Transcript'}</span>
                   </h3>
                   <p className="text-xs text-slate-400 mt-0.5 odia-text">
-                    ଓଡ଼ିଆ ସଂଳାପ | 100% Non-Summarized Conversation
+                    {targetLang === 'or' ? 'ଓଡ଼ିଆ ସଂଳାପ | 100% Non-Summarized' : 'English Dialogue | 100% Non-Summarized'}
                   </p>
                 </div>
 
@@ -488,7 +509,7 @@ export default function App() {
                       viewMode === 'odia_only' ? 'bg-teal-600 text-white shadow' : 'text-slate-400 hover:text-white'
                     }`}
                   >
-                    Odia Only
+                    {targetLang === 'or' ? 'Odia Only' : 'English Only'}
                   </button>
                   <button
                     onClick={() => setViewMode('monologue')}
@@ -534,12 +555,12 @@ export default function App() {
 
                 <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
                   <button
-                    onClick={handleCopyOdiaText}
+                    onClick={handleCopyText}
                     className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3 py-2 rounded-xl text-xs flex items-center gap-1.5 transition"
-                    title="Copy Odia Dialogue text"
+                    title="Copy dialogue text"
                   >
                     {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-teal-400" />}
-                    <span>{copied ? 'Copied!' : 'Copy Odia'}</span>
+                    <span>{copied ? 'Copied!' : 'Copy Text'}</span>
                   </button>
 
                   <button
@@ -547,7 +568,7 @@ export default function App() {
                     className="glow-btn px-4 py-2 text-xs flex items-center gap-2"
                   >
                     <Download className="w-4 h-4" />
-                    <span>Download Odia PDF</span>
+                    <span>Download PDF</span>
                   </button>
                 </div>
               </div>
@@ -559,7 +580,7 @@ export default function App() {
                     No dialogue matching search/speaker filter
                   </div>
                 ) : viewMode === 'monologue' ? (
-                  /* Monologue Full Script View */
+                  /* Monologue View */
                   <div className="bg-slate-900/60 border border-slate-800 p-5 rounded-xl space-y-4 leading-relaxed text-sm odia-text">
                     {filteredLines.map((line) => (
                       <div key={line.id} className="mb-3">
@@ -609,7 +630,9 @@ export default function App() {
                         )}
 
                         <div className="text-sm text-slate-100 odia-text bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/80 relative group">
-                          <span className="text-[10px] uppercase font-bold text-teal-400 block mb-1">ଓଡ଼ିଆ ଅନୁବାଦ (Odia)</span>
+                          <span className="text-[10px] uppercase font-bold text-teal-400 block mb-1">
+                            {targetLang === 'or' ? 'ଓଡ଼ିଆ ଅନୁବାଦ (Odia)' : 'English Dialogue'}
+                          </span>
                           
                           {editingLineId === line.id ? (
                             <textarea
@@ -626,7 +649,7 @@ export default function App() {
                               <button
                                 onClick={() => setEditingLineId(line.id)}
                                 className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-teal-400 p-1 transition"
-                                title="Edit Odia Translation line"
+                                title="Edit Dialogue line"
                               >
                                 <Edit3 className="w-3.5 h-3.5" />
                               </button>
@@ -676,7 +699,7 @@ export default function App() {
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
                 <Download className="w-5 h-5 text-teal-400" />
-                <span>Odia PDF Settings</span>
+                <span>PDF Download Settings ({targetLang === 'or' ? 'Odia' : 'English'})</span>
               </h3>
               <button
                 onClick={() => setIsPdfModalOpen(false)}
@@ -708,19 +731,19 @@ export default function App() {
                   onChange={(e) => setPdfLayout(e.target.value)}
                   className="w-full bg-slate-900 border border-slate-700 focus:border-teal-500 rounded-lg p-2.5 text-xs text-slate-100 outline-none"
                 >
-                  <option value="dual">Dual Column (Original + Odia Translation)</option>
-                  <option value="odia_only">Odia Dialogue Timeline Only</option>
-                  <option value="monologue">Full Odia Monologue Paragraphs</option>
+                  <option value="dual">Dual Column (Original + Target Translation)</option>
+                  <option value="odia_only">Target Dialogue Timeline Only</option>
+                  <option value="monologue">Full Monologue Paragraphs</option>
                 </select>
               </div>
 
               <div className="bg-slate-900/60 p-3 rounded-lg border border-slate-800 text-xs text-slate-400">
                 <p className="flex items-center gap-1.5 font-semibold text-teal-300 mb-1">
                   <Check className="w-4 h-4" />
-                  Noto Sans Oriya Font Embedded
+                  {targetLang === 'or' ? 'Noto Sans Oriya Font Embedded' : 'Standard Helvetica PDF Engine'}
                 </p>
                 <p className="odia-text text-[11px]">
-                  ସମସ୍ତ ଓଡ଼ିଆ ଅକ୍ଷର (ଓଡ଼ିଆ Script) PDF ରେ ସୁନ୍ଦର ଭାବେ ପ୍ରିଣ୍ଟ ହେବ।
+                  {targetLang === 'or' ? 'ସମସ୍ତ ଓଡ଼ିଆ ଅକ୍ଷର (ଓଡ଼ିଆ Script) PDF ରେ ସୁନ୍ଦର ଭାବେ ପ୍ରିଣ୍ଟ ହେବ।' : 'Clean formatted English PDF with timestamps and speakers.'}
                 </p>
               </div>
             </div>
@@ -746,7 +769,7 @@ export default function App() {
                 ) : (
                   <>
                     <Download className="w-4 h-4" />
-                    <span>Download Odia PDF</span>
+                    <span>Download PDF ({targetLang.toUpperCase()})</span>
                   </>
                 )}
               </button>
