@@ -35,8 +35,24 @@ An AI-powered web application that transcribes English, Hindi, and Hinglish YouT
 
 ## 🌐 Deploy to Vercel
 
+### Required: YouTube Data API Key
+
+For cloud deployments (Vercel, Render, etc.), you need a YouTube Data API v3 key to bypass YouTube's IP restrictions:
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
+2. Create a new project or select existing one
+3. Enable **YouTube Data API v3** from the API library
+4. Create credentials → API Key
+5. Add the API key as an environment variable in Vercel:
+   - Go to your Vercel project → Settings → Environment Variables
+   - Add `YOUTUBE_API_KEY` with your API key value
+
+### Deploy
+
 ```bash
 npm run vercel-build
 ```
 
 Deploy directly via Vercel CLI or import the GitHub repository into the Vercel Dashboard.
+
+**Note**: Without the YouTube API key, transcription may fail on cloud deployments due to YouTube's IP restrictions. Local development works without the API key.

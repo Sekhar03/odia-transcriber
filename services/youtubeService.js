@@ -3,6 +3,7 @@ const { Innertube } = require('youtubei.js');
 const he = require('he');
 
 const INNERTUBE_API_KEY = 'AIzaSyAO_FJ2Slv5QZ0_A9-x_M4_J8-M';
+const YOUTUBE_DATA_API_KEY = process.env.YOUTUBE_API_KEY || '';
 
 function extractVideoId(url) {
   if (!url) return null;
@@ -143,6 +144,137 @@ function findCaptionTracksInResponse(data) {
   }
   searchObj(data);
   return found;
+}
+
+/**
+ * Fetch captions using YouTube Data API v3 (requires API key, works from any IP)
+ */
+async function fetchViaYouTubeDataAPI(videoId, debugLogs = []) {
+  if (!YOUTUBE_DATA_API_KEY) {
+    debugLogs.push('[YouTube Data API] No API key provided, skipping');
+    return null;
+  }
+
+  try {
+    debugLogs.push('[YouTube Data API] Fetching caption tracks...');
+    
+    // Get caption tracks
+    const captionRes = await fetch(
+      `https://www.googleapis.com/youtube/v3/captions?part=snippet&videoId=${videoId}&key=${YOUTUBE_DATA_API_KEY}`
+    );
+    
+    if (!captionRes.ok) {
+      debugLogs.push(`[YouTube Data API] HTTP error: ${captionRes.status}`);
+      return null;
+    }
+    
+    const captionData = await captionRes.json();
+    
+    if (!captionData.items || captionData.items.length === 0) {
+      debugLogs.push('[YouTube Data API] No caption tracks found');
+      return null;
+    }
+    
+    debugLogs.push(`[YouTube Data API] Found ${captionData.items.length} caption tracks`);
+    
+    // Find a downloadable caption track
+    const downloadableTrack = captionData.items.find(item => item.snippet.trackKind === 'asr' || item.snippet.trackKind === 'standard');
+    
+    if (!downloadableTrack) {
+      debugLogs.push('[YouTube Data API] No downloadable caption track found');
+      return null;
+    }
+    
+    // Download the caption content
+    const downloadRes = await fetch(
+      `https://www.googleapis.com/youtube/v3/captions/${downloadableTrack.id}?key=${YOUTUBE_DATA_API_KEY}&tfmt=srt`
+    );
+    
+    if (!downloadRes.ok) {
+      debugLogs.push(`[YouTube Data API] Download error: ${downloadRes.status}`);
+      return null;
+    }
+    
+    const srtContent = await downloadRes.text();
+    
+    // Parse SRT format
+    const rawItems = parseSRT(srtContent, downloadableTrack.snippet.language);
+    
+    if (rawItems && rawItems.length > 0) {
+      debugLogs.push(`[YouTube Data API SUCCESS] Extracted ${rawItems.length} captions`);
+      
+      // Get video metadata
+      const videoRes = await fetch(
+        `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&id=${videoId}&key=${YOUTUBE_DATA_API_KEY}`
+      );
+      const videoData = await videoRes.json();
+      
+      const title = videoData.items?.[0]?.snippet?.title || '';
+      const author = videoData.items?.[0]?.snippet?.channelTitle || '';
+      const lengthSeconds = parseDuration(videoData.items?.[0]?.contentDetails?.duration || 'PT0S');
+      
+      return {
+        rawItems,
+        title,
+        author,
+        lengthSeconds
+      };
+    }
+  } catch (e) {
+    debugLogs.push(`[YouTube Data API Error] ${e.message}`);
+  }
+  
+  return null;
+}
+
+function parseSRT(srtContent, lang = 'en') {
+  const items = [];
+  const blocks = srtContent.trim().split(/\n\n+/);
+  
+  for (const block of blocks) {
+    const lines = block.split('\n');
+    if (lines.length < 3) continue;
+    
+    const timeMatch = lines[1].match(/(\d{2}:\d{2}:\d{2}),(\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}),(\d{3})/);
+    if (!timeMatch) continue;
+    
+    const startTime = parseSRTTime(timeMatch[1], timeMatch[2]);
+    const endTime = parseSRTTime(timeMatch[3], timeMatch[4]);
+    
+    const text = lines.slice(2).join(' ').replace(/<[^>]+>/g, '').trim();
+    
+    if (text) {
+      items.push({
+        text,
+        offset: startTime,
+        duration: endTime - startTime,
+        lang
+      });
+    }
+  }
+  
+  return items;
+}
+
+function parseSRTTime(timeStr, msStr) {
+  const parts = timeStr.split(':');
+  const hours = parseInt(parts[0], 10);
+  const minutes = parseInt(parts[1], 10);
+  const seconds = parseInt(parts[2], 10);
+  const ms = parseInt(msStr, 10);
+  
+  return (hours * 3600 + minutes * 60 + seconds) * 1000 + ms;
+}
+
+function parseDuration(duration) {
+  const match = duration.match(/PT(\d+H)?(\d+M)?(\d+S)?/);
+  if (!match) return 0;
+  
+  const hours = match[1] ? parseInt(match[1]) : 0;
+  const minutes = match[2] ? parseInt(match[2]) : 0;
+  const seconds = match[3] ? parseInt(match[3]) : 0;
+  
+  return hours * 3600 + minutes * 60 + seconds;
 }
 
 /**
@@ -409,20 +541,35 @@ async function getYouTubeData(url, onProgressUpdate, debugLogs = []) {
   let rawItems = [];
   let sourceLanguage = 'English / Hindi';
 
-  // ===== LAYER 1: youtubei.js (most reliable for cloud environments) =====
-  debugLogs.push(`[Layer 1] Trying youtubei.js...`);
-  const youtubeiRes = await fetchViaYoutubeiJS(videoId, debugLogs);
-  if (youtubeiRes && youtubeiRes.rawItems && youtubeiRes.rawItems.length > 0) {
-    rawItems = youtubeiRes.rawItems;
-    if (youtubeiRes.title) metadata.title = youtubeiRes.title;
-    if (youtubeiRes.author) metadata.author = youtubeiRes.author;
-    if (youtubeiRes.lengthSeconds) {
-      metadata.lengthSeconds = youtubeiRes.lengthSeconds;
-      metadata.durationFormatted = formatTime(youtubeiRes.lengthSeconds);
+  // ===== LAYER 1: YouTube Data API v3 (requires API key, works from any IP) =====
+  debugLogs.push(`[Layer 1] Trying YouTube Data API v3...`);
+  const apiRes = await fetchViaYouTubeDataAPI(videoId, debugLogs);
+  if (apiRes && apiRes.rawItems && apiRes.rawItems.length > 0) {
+    rawItems = apiRes.rawItems;
+    if (apiRes.title) metadata.title = apiRes.title;
+    if (apiRes.author) metadata.author = apiRes.author;
+    if (apiRes.lengthSeconds) {
+      metadata.lengthSeconds = apiRes.lengthSeconds;
+      metadata.durationFormatted = formatTime(apiRes.lengthSeconds);
     }
   }
 
-  // ===== LAYER 2: YoutubeTranscript library with NATIVE fetch (no custom wrapper) =====
+  // ===== LAYER 2: youtubei.js (most reliable for cloud environments) =====
+  if (!rawItems || rawItems.length === 0) {
+    debugLogs.push(`[Layer 2] Trying youtubei.js...`);
+    const youtubeiRes = await fetchViaYoutubeiJS(videoId, debugLogs);
+    if (youtubeiRes && youtubeiRes.rawItems && youtubeiRes.rawItems.length > 0) {
+      rawItems = youtubeiRes.rawItems;
+      if (youtubeiRes.title) metadata.title = youtubeiRes.title;
+      if (youtubeiRes.author) metadata.author = youtubeiRes.author;
+      if (youtubeiRes.lengthSeconds) {
+        metadata.lengthSeconds = youtubeiRes.lengthSeconds;
+        metadata.durationFormatted = formatTime(youtubeiRes.lengthSeconds);
+      }
+    }
+  }
+
+  // ===== LAYER 3: YoutubeTranscript library with NATIVE fetch (no custom wrapper) =====
   // This is the most reliable method because the library handles YouTube's
   // session cookies and consent internally. Works from most cloud IPs.
   if (!rawItems || rawItems.length === 0) {
@@ -431,37 +578,37 @@ async function getYouTubeData(url, onProgressUpdate, debugLogs = []) {
       if (rawItems.length > 0) break;
       try {
         const opts = lang ? { lang } : {};
-        debugLogs.push(`[Layer 2] YoutubeTranscript.fetchTranscript (native fetch, lang=${lang || 'auto'})...`);
+        debugLogs.push(`[Layer 3] YoutubeTranscript.fetchTranscript (native fetch, lang=${lang || 'auto'})...`);
         rawItems = await YoutubeTranscript.fetchTranscript(videoId, opts);
         if (rawItems && rawItems.length > 0) {
-          debugLogs.push(`[Layer 2 SUCCESS] Extracted ${rawItems.length} items with lang=${lang || 'auto'}`);
+          debugLogs.push(`[Layer 3 SUCCESS] Extracted ${rawItems.length} items with lang=${lang || 'auto'}`);
         }
       } catch (e1) {
-        debugLogs.push(`[Layer 2] lang=${lang || 'auto'} failed: ${e1.message}`);
+        debugLogs.push(`[Layer 3] lang=${lang || 'auto'} failed: ${e1.message}`);
       }
     }
   }
 
-  // ===== LAYER 3: YoutubeTranscript with custom fetch wrapper (SOCS cookies) =====
+  // ===== LAYER 4: YoutubeTranscript with custom fetch wrapper (SOCS cookies) =====
   if (!rawItems || rawItems.length === 0) {
     for (const lang of langAttempts) {
       if (rawItems && rawItems.length > 0) break;
       try {
         const opts = lang ? { lang, fetch: vercelCustomFetch } : { fetch: vercelCustomFetch };
-        debugLogs.push(`[Layer 3] YoutubeTranscript.fetchTranscript (custom fetch, lang=${lang || 'auto'})...`);
+        debugLogs.push(`[Layer 4] YoutubeTranscript.fetchTranscript (custom fetch, lang=${lang || 'auto'})...`);
         rawItems = await YoutubeTranscript.fetchTranscript(videoId, opts);
         if (rawItems && rawItems.length > 0) {
-          debugLogs.push(`[Layer 3 SUCCESS] Extracted ${rawItems.length} items with lang=${lang || 'auto'}`);
+          debugLogs.push(`[Layer 4 SUCCESS] Extracted ${rawItems.length} items with lang=${lang || 'auto'}`);
         }
       } catch (e2) {
-        debugLogs.push(`[Layer 3] lang=${lang || 'auto'} failed: ${e2.message}`);
+        debugLogs.push(`[Layer 4] lang=${lang || 'auto'} failed: ${e2.message}`);
       }
     }
   }
 
-  // ===== LAYER 4: InnerTube ANDROID Multi-Client Extractor =====
+  // ===== LAYER 5: InnerTube ANDROID Multi-Client Extractor =====
   if (!rawItems || rawItems.length === 0) {
-    debugLogs.push(`[Layer 4] Trying InnerTube ANDROID Multi-Client...`);
+    debugLogs.push(`[Layer 5] Trying InnerTube ANDROID Multi-Client...`);
     const innerTubeRes = await fetchViaInnerTube(videoId, debugLogs);
     if (innerTubeRes && innerTubeRes.rawItems && innerTubeRes.rawItems.length > 0) {
       rawItems = innerTubeRes.rawItems;
@@ -474,9 +621,9 @@ async function getYouTubeData(url, onProgressUpdate, debugLogs = []) {
     }
   }
 
-  // ===== LAYER 5: Watch Page HTML Scraping =====
+  // ===== LAYER 6: Watch Page HTML Scraping =====
   if (!rawItems || rawItems.length === 0) {
-    debugLogs.push(`[Layer 5] Trying Watch Page HTML Scraping...`);
+    debugLogs.push(`[Layer 6] Trying Watch Page HTML Scraping...`);
     try {
       const watchRes = await vercelCustomFetch(`https://www.youtube.com/watch?v=${videoId}`);
       const watchHtml = await watchRes.text();
@@ -484,7 +631,7 @@ async function getYouTubeData(url, onProgressUpdate, debugLogs = []) {
       if (match) {
         const pData = JSON.parse(match[1]);
         const captionTracks = findCaptionTracksInResponse(pData);
-        debugLogs.push(`[Layer 5] CaptionTracks count: ${captionTracks ? captionTracks.length : 0}`);
+        debugLogs.push(`[Layer 6] CaptionTracks count: ${captionTracks ? captionTracks.length : 0}`);
         if (captionTracks && captionTracks.length > 0) {
           for (const tr of captionTracks) {
             if (!tr.baseUrl) continue;
@@ -494,7 +641,7 @@ async function getYouTubeData(url, onProgressUpdate, debugLogs = []) {
               const parsed = parseUniversalCaptions(txtData, tr.languageCode);
               if (parsed && parsed.length > 0) {
                 rawItems = parsed;
-                debugLogs.push(`[Layer 5 SUCCESS] Extracted ${parsed.length} items`);
+                debugLogs.push(`[Layer 6 SUCCESS] Extracted ${parsed.length} items`);
                 break;
               }
             }
@@ -502,13 +649,13 @@ async function getYouTubeData(url, onProgressUpdate, debugLogs = []) {
         }
       }
     } catch (e4) {
-      debugLogs.push(`[Layer 5 Error] ${e4.message}`);
+      debugLogs.push(`[Layer 6 Error] ${e4.message}`);
     }
   }
 
-  // ===== LAYER 6: Direct TimedText Endpoints =====
+  // ===== LAYER 7: Direct TimedText Endpoints =====
   if (!rawItems || rawItems.length === 0) {
-    debugLogs.push(`[Layer 6] Trying Direct TimedText Endpoints...`);
+    debugLogs.push(`[Layer 7] Trying Direct TimedText Endpoints...`);
     const fallbacks = ['hi', 'en', 'or', 'a.hi', 'a.en'];
     for (const fLang of fallbacks) {
       try {
@@ -518,7 +665,7 @@ async function getYouTubeData(url, onProgressUpdate, debugLogs = []) {
           const parsed = parseUniversalCaptions(directTxt, fLang);
           if (parsed && parsed.length > 0) {
             rawItems = parsed;
-            debugLogs.push(`[Layer 6 SUCCESS] Extracted ${parsed.length} items for lang ${fLang}`);
+            debugLogs.push(`[Layer 7 SUCCESS] Extracted ${parsed.length} items for lang ${fLang}`);
             break;
           }
         }
@@ -527,7 +674,7 @@ async function getYouTubeData(url, onProgressUpdate, debugLogs = []) {
   }
 
   if (!rawItems || rawItems.length === 0) {
-    debugLogs.push(`[getYouTubeData Error] ALL 6 LAYERS FAILED for videoId: ${videoId}`);
+    debugLogs.push(`[getYouTubeData Error] ALL 7 LAYERS FAILED for videoId: ${videoId}`);
     throw new Error(`Could not extract captions for video ID (${videoId}). Please check if the video has captions/subtitles enabled on YouTube.`);
   }
 
