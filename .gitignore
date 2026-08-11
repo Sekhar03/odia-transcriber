@@ -1,0 +1,23 @@
+# Node modules
+node_modules/
+client/node_modules/
+
+# Production build output
+client/dist/
+dist/
+
+# Logs & scratch files
+*.log
+scratch/
+test_*.pdf
+test_*.js
+
+# Environment variables
+.env
+.env.local
+
+# OS / Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
