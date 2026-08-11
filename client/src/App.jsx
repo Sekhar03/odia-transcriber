@@ -25,9 +25,9 @@ import './index.css';
 import {
   extractVideoId,
   extractCaptionsInBrowser,
-  isGoogleAuthConfigured,
-  requestGoogleAccessToken
+  isGoogleAuthConfigured
 } from './youtubeCaptionClient';
+import GoogleSignInButton from './GoogleSignInButton';
 
 const YoutubeIcon = ({ className = "w-6 h-6" }) => (
   <svg className={className} viewBox="0 0 24 24" fill="currentColor">
@@ -89,18 +89,26 @@ export default function App() {
 
   const [copied, setCopied] = useState(false);
   const [googleAccessToken, setGoogleAccessToken] = useState(null);
-  const [googleUserLabel, setGoogleUserLabel] = useState('');
+  const [googleUserProfile, setGoogleUserProfile] = useState(null);
   const iframeRef = useRef(null);
 
   const isCloudDeploy = typeof window !== 'undefined'
-    && (window.location.hostname.includes('vercel.app') || isGoogleAuthConfigured());
+    && window.location.hostname.includes('vercel.app');
 
   const ensureGoogleAccessToken = async () => {
     if (googleAccessToken) return googleAccessToken;
-    const token = await requestGoogleAccessToken();
-    setGoogleAccessToken(token);
-    setGoogleUserLabel('Google account connected');
-    return token;
+    throw new Error('Please sign in with Google first to fetch YouTube captions on cloud deploy.');
+  };
+
+  const handleGoogleSignedIn = ({ accessToken, profile }) => {
+    setGoogleAccessToken(accessToken);
+    setGoogleUserProfile(profile);
+    setError(null);
+  };
+
+  const handleGoogleSignedOut = () => {
+    setGoogleAccessToken(null);
+    setGoogleUserProfile(null);
   };
 
   const transcribeFromBrowserCaptions = async (finalUrl, selectedLang, progressTimer) => {
@@ -169,6 +177,11 @@ export default function App() {
     const finalUrl = targetUrl.trim();
     if (!finalUrl) {
       setError('Please paste a valid YouTube video link.');
+      return;
+    }
+
+    if (isCloudDeploy && !googleAccessToken) {
+      setError('Please sign in with Google before transcribing.');
       return;
     }
 
@@ -358,30 +371,43 @@ export default function App() {
           </div>
         </div>
 
-        {/* Target Language Toggle */}
-        <div className="flex items-center gap-3 bg-slate-900/80 p-3 rounded-xl border border-slate-700/50">
-          <Globe className="w-5 h-5 text-teal-400" />
-          <div className="text-xs">
-            <span className="text-slate-400 block mb-1">Target Language:</span>
-            <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
-              <button
-                onClick={() => setTargetLang('or')}
-                className={`px-2.5 py-1 rounded text-xs font-bold transition ${
-                  targetLang === 'or' ? 'bg-teal-600 text-white' : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                ଓଡ଼ିଆ (Odia)
-              </button>
-              <button
-                onClick={() => setTargetLang('en')}
-                className={`px-2.5 py-1 rounded text-xs font-bold transition ${
-                  targetLang === 'en' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                English
-              </button>
+        {/* Target Language + Google Sign-In */}
+        <div className="flex flex-col items-stretch gap-3">
+          <div className="flex items-center gap-3 bg-slate-900/80 p-3 rounded-xl border border-slate-700/50">
+            <Globe className="w-5 h-5 text-teal-400" />
+            <div className="text-xs">
+              <span className="text-slate-400 block mb-1">Target Language:</span>
+              <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
+                <button
+                  onClick={() => setTargetLang('or')}
+                  className={`px-2.5 py-1 rounded text-xs font-bold transition ${
+                    targetLang === 'or' ? 'bg-teal-600 text-white' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  ଓଡ଼ିଆ (Odia)
+                </button>
+                <button
+                  onClick={() => setTargetLang('en')}
+                  className={`px-2.5 py-1 rounded text-xs font-bold transition ${
+                    targetLang === 'en' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  English
+                </button>
+              </div>
             </div>
           </div>
+
+          {(isCloudDeploy || isGoogleAuthConfigured()) && (
+            <GoogleSignInButton
+              accessToken={googleAccessToken}
+              userProfile={googleUserProfile}
+              onSignedIn={handleGoogleSignedIn}
+              onSignedOut={handleGoogleSignedOut}
+              onError={setError}
+              compact
+            />
+          )}
         </div>
       </header>
 
@@ -451,29 +477,23 @@ export default function App() {
         </div>
 
         {isCloudDeploy && (
-          <div className="mt-1 flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-950/20 px-4 py-3 text-xs text-amber-100">
-            <div className="flex items-start gap-2 flex-1">
+          <div className="mt-1 flex flex-col gap-3 rounded-xl border border-amber-500/30 bg-amber-950/20 px-4 py-3 text-xs text-amber-100">
+            <div className="flex items-start gap-2">
               <Info className="w-4 h-4 mt-0.5 shrink-0 text-amber-300" />
               <p>
-                On cloud deploy, captions are fetched with <strong>your Google/YouTube account</strong> in your browser, then translated on the server.
-                {isGoogleAuthConfigured() ? '' : ' Set `VITE_GOOGLE_CLIENT_ID` in Vercel env vars to enable sign-in.'}
+                Sign in with Google to fetch captions using <strong>your YouTube account</strong> in your browser.
+                {!isGoogleAuthConfigured() && ' Add `VITE_GOOGLE_CLIENT_ID` in Vercel env vars and redeploy to enable the button.'}
               </p>
             </div>
-            {isGoogleAuthConfigured() && (
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    setError(null);
-                    await ensureGoogleAccessToken();
-                  } catch (err) {
-                    setError(err.message || 'Google sign-in failed.');
-                  }
-                }}
-                className="shrink-0 rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 font-semibold text-amber-100 hover:bg-amber-500/20 transition"
-              >
-                {googleUserLabel || 'Connect Google Account'}
-              </button>
+
+            {!googleAccessToken && isGoogleAuthConfigured() && (
+              <GoogleSignInButton
+                accessToken={googleAccessToken}
+                userProfile={googleUserProfile}
+                onSignedIn={handleGoogleSignedIn}
+                onSignedOut={handleGoogleSignedOut}
+                onError={setError}
+              />
             )}
           </div>
         )}

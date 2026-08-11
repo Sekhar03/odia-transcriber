@@ -111,7 +111,9 @@ export function isGoogleAuthConfigured() {
   return Boolean(GOOGLE_CLIENT_ID);
 }
 
-export function requestGoogleAccessToken() {
+export function requestGoogleAccessToken(options = {}) {
+  const { forceAccountPicker = false } = options;
+
   return new Promise((resolve, reject) => {
     if (!GOOGLE_CLIENT_ID) {
       reject(new Error('Google Client ID is not configured.'));
@@ -125,7 +127,7 @@ export function requestGoogleAccessToken() {
 
     const client = window.google.accounts.oauth2.initTokenClient({
       client_id: GOOGLE_CLIENT_ID,
-      scope: 'https://www.googleapis.com/auth/youtube.readonly',
+      scope: 'https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile',
       callback: (response) => {
         if (response.error) {
           reject(new Error(response.error_description || response.error));
@@ -135,7 +137,36 @@ export function requestGoogleAccessToken() {
       }
     });
 
-    client.requestAccessToken({ prompt: '' });
+    client.requestAccessToken({ prompt: forceAccountPicker ? 'select_account' : '' });
+  });
+}
+
+export async function fetchGoogleUserProfile(accessToken) {
+  const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+
+  if (!res.ok) {
+    return { name: 'Google user', email: 'Connected' };
+  }
+
+  return res.json();
+}
+
+export function revokeGoogleAccessToken(accessToken) {
+  return new Promise((resolve, reject) => {
+    if (!window.google?.accounts?.oauth2) {
+      resolve();
+      return;
+    }
+
+    window.google.accounts.oauth2.revoke(accessToken, (response) => {
+      if (response.error) {
+        reject(new Error(response.error));
+        return;
+      }
+      resolve();
+    });
   });
 }
 
