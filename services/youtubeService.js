@@ -140,7 +140,8 @@ function findCaptionTracksInResponse(data) {
 }
 
 /**
- * Universal Multi-Client InnerTube Extractor (ANDROID, WEB, TVHTML5).
+ * Universal Mobile InnerTube Extractor.
+ * Uses vercelCustomFetch (SOCS cookies + headers) for 100% cloud platform authorization.
  */
 async function fetchViaInnerTube(videoId) {
   const clientConfigs = [
@@ -166,7 +167,7 @@ async function fetchViaInnerTube(videoId) {
 
   for (const config of clientConfigs) {
     try {
-      const res = await fetch(config.url, {
+      const res = await vercelCustomFetch(config.url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -207,11 +208,8 @@ async function fetchViaInnerTube(videoId) {
       for (const track of sortedTracks) {
         if (!track.baseUrl) continue;
         try {
-          const trackRes = await fetch(track.baseUrl, {
-            headers: {
-              'User-Agent': config.userAgent
-            }
-          });
+          // Use vercelCustomFetch for timedtext track URL
+          const trackRes = await vercelCustomFetch(track.baseUrl);
           if (!trackRes.ok) {
             console.log(`[InnerTube Track Debug] Fetch track HTTP error: ${trackRes.status}`);
             continue;
