@@ -2,10 +2,16 @@
   "version": 2,
   "buildCommand": "npx vite build client",
   "outputDirectory": "client/dist",
+  "functions": {
+    "api/**/*.js": {
+      "memory": 1024,
+      "maxDuration": 60
+    }
+  },
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://odia-transcriber.onrender.com/api/:path*"
+      "destination": "/api/index.js"
     },
     {
       "source": "/(.*)",
