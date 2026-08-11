@@ -22,7 +22,22 @@ function formatTime(seconds) {
   return `${padMins}:${padSecs}`;
 }
 
-// Detect mixed languages (Hinglish / Hindi + English)
+/**
+ * Custom fetch function with YouTube Consent cookies & desktop headers.
+ * Bypasses YouTube datacenter IP blocks on Vercel Serverless Functions.
+ */
+function vercelCustomFetch(url, options = {}) {
+  const headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'Accept-Language': 'en-US,en;q=0.9,hi;q=0.8',
+    'Cookie': 'SOCS=CAESEwgDEgk2ODE3ODc5OTAaAmVuIAEaBgiA_LyaBg; CONSENT=YES+cb.20210328-17-p0.en+FX+667',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    ...(options.headers || {})
+  };
+
+  return fetch(url, { ...options, headers });
+}
+
 function detectSpokenLanguage(textSample) {
   const hindiRegex = /[\u0900-\u097F]/;
   const englishRegex = /[a-zA-Z]/;
@@ -36,7 +51,6 @@ function detectSpokenLanguage(textSample) {
   return 'English / Hindi';
 }
 
-// Speaker Diarization logic based on pauses, turn-taking, and conversational cues
 function assignSpeakers(rawLines) {
   let currentSpeaker = 1;
   let linesWithSpeakers = [];
@@ -45,12 +59,7 @@ function assignSpeakers(rawLines) {
     const line = rawLines[i];
     const prevLine = i > 0 ? rawLines[i - 1] : null;
 
-    // Detect speaker turn triggers:
-    // 1. Long pause (> 2.8 seconds gap between dialogues)
-    // 2. Question mark in previous line followed by statement
-    // 3. Conversational intro markers ("Yes", "Exactly", "So", "Haan", "Ji", "Right")
     let switchSpeaker = false;
-
     if (prevLine) {
       const gap = line.start - prevLine.end;
       const prevEndsWithQuestion = prevLine.text.trim().endsWith('?');
@@ -82,11 +91,7 @@ async function getYouTubeMetadata(videoId) {
   let thumbnail = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
 
   try {
-    const response = await fetch(pageUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      }
-    });
+    const response = await vercelCustomFetch(pageUrl);
     if (response.ok) {
       const html = await response.text();
       const titleMatch = html.match(/<meta property="og:title" content="([^"]+)">/);
@@ -124,17 +129,38 @@ async function getYouTubeData(url, onProgressUpdate) {
   let rawItems = [];
   let sourceLanguage = 'English / Hindi';
 
-  // Fetch transcript (prioritize English, Hindi, Hinglish, auto)
+  // Fetch transcript with Vercel Consent Cookie Bypass
   try {
-    rawItems = await YoutubeTranscript.fetchTranscript(videoId, { lang: 'en' });
+    rawItems = await YoutubeTranscript.fetchTranscript(videoId, { fetch: vercelCustomFetch, lang: 'en' });
   } catch (e1) {
     try {
-      rawItems = await YoutubeTranscript.fetchTranscript(videoId, { lang: 'hi' });
+      rawItems = await YoutubeTranscript.fetchTranscript(videoId, { fetch: vercelCustomFetch, lang: 'hi' });
     } catch (e2) {
       try {
-        rawItems = await YoutubeTranscript.fetchTranscript(videoId);
+        rawItems = await YoutubeTranscript.fetchTranscript(videoId, { fetch: vercelCustomFetch });
       } catch (e3) {
-        throw new Error('Could not extract captions or audio speech for this video. Please ensure the video has English or Hindi audio/captions enabled.');
+        // Fallback: direct InnerTube player API scraping with custom headers
+        try {
+          const watchRes = await vercelCustomFetch(`https://www.youtube.com/watch?v=${videoId}`);
+          const watchHtml = await watchRes.text();
+          const playerMatch = watchHtml.match(/ytInitialPlayerResponse\s*=\s*({.+?});/);
+          if (playerMatch) {
+            const pData = JSON.parse(playerMatch[1]);
+            const tracks = pData?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+            if (tracks && tracks.length > 0) {
+              const selTrack = tracks.find(t => t.languageCode === 'hi' || t.languageCode === 'en' || t.languageCode === 'or') || tracks[0];
+              const tRes = await vercelCustomFetch(selTrack.baseUrl);
+              const xmlData = await tRes.text();
+              rawItems = YoutubeTranscript.parseTranscriptXml(xmlData, selTrack.languageCode);
+            }
+          }
+        } catch (e4) {
+          console.error('All YouTube transcript extraction layers failed:', e4.message);
+        }
+
+        if (!rawItems || rawItems.length === 0) {
+          throw new Error('Could not extract captions or audio speech for this video. Please ensure the video has English or Hindi audio/captions enabled.');
+        }
       }
     }
   }
@@ -164,7 +190,7 @@ async function getYouTubeData(url, onProgressUpdate) {
       endFormatted: formatTime(endSec),
       text: cleanText
     };
-  }).filter(l => l.text && l.text !== '[Music]' && l.text !== '[♪♪♪]');
+  }).filter(l => l.text && l.text !== '[Music]' && l.text !== '[♪♪♪]' && l.text !== '[ମ୍ୟୁଜିକ୍]' && l.text !== '[ସଙ୍ଗୀତ]');
 
   // Group adjacent short lines into natural conversational turns
   const mergedLines = [];
