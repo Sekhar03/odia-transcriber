@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "buildCommand": "npm run vercel-build",
+  "buildCommand": "npx vite build client",
   "outputDirectory": "client/dist",
   "rewrites": [
     {
