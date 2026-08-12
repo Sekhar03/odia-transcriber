@@ -1,79 +1,88 @@
 # pull_dataset.py
-# Script to programmatically pull and format 10,000 parallel translation pairs from HuggingFace
+# Script to pull English-Odia and Hindi-English parallel datasets with T5 task prefixes
 import os
 import json
+import random
 from datasets import load_dataset
 
 def main():
-    dataset_name = "ai4bharat/samanantar"
-    lang_subset = "or" # Odia language subset
-    max_pairs = 10000
+    max_subset_pairs = 5000
     output_file = "dataset/indictrans2_odia_dataset.json"
+    pairs = []
 
-    print(f"[Fetch] Loading dataset '{dataset_name}' (Odia subset)...")
-    
+    # 1. Pull English-to-Odia translation pairs
+    print("[Fetch] Loading English-Odia dataset from Samanantar...")
     try:
-        # Use streaming=True to fetch dynamically without downloading the entire 50GB file
-        dataset = load_dataset(dataset_name, lang_subset, split="train", streaming=True)
-        
-        pairs = []
-        print(f"[Fetch] Extracting first {max_pairs} sentence pairs...")
-        
-        for idx, item in enumerate(dataset):
-            # Samanantar format has source (English/Hindi) and target (Odia) text properties
-            src_text = item.get("english", item.get("src", ""))
-            tgt_text = item.get("odia", item.get("tgt", ""))
-            
-            if not src_text or not tgt_text:
-                # Handle alternative key structure if present
-                src_text = item.get("src", "")
-                tgt_text = item.get("tgt", "")
-                
-            if src_text and tgt_text:
+        odia_dataset = load_dataset("ai4bharat/samanantar", "or", split="train", streaming=True)
+        count = 0
+        for item in odia_dataset:
+            src = item.get("english", item.get("src", ""))
+            tgt = item.get("odia", item.get("tgt", ""))
+            if src and tgt:
                 pairs.append({
-                    "source": src_text,
-                    "target": tgt_text
+                    "source": f"translate English to Odia: {src}",
+                    "target": tgt
                 })
-                
-            if len(pairs) >= max_pairs:
+                count += 1
+            if count >= max_subset_pairs:
                 break
-                
-        if len(pairs) == 0:
-            raise ValueError("No valid sentence pairs extracted.")
-
-        # Save to local JSON file
-        os.makedirs(os.path.dirname(output_file), exist_ok=True)
-        with open(output_file, "w", encoding="utf-8") as f:
-            json.dump(pairs, f, ensure_ascii=False, indent=2)
-            
-        print(f"[Success] Successfully pulled and saved {len(pairs)} pairs to {output_file}!")
-
+        print(f"[Success] Extracted {count} English-to-Odia pairs.")
     except Exception as e:
-        print(f"[Error] Failed to load {dataset_name}: {e}")
-        print("[Fallback] Trying alternative open parallel corpus (Helsinki-NLP/opus-100)...")
+        print(f"[Error] Failed to load Samanantar Odia: {e}. Trying OPUS fallback...")
         try:
-            # Fallback to OPUS-100 translation corpus
-            dataset = load_dataset("opus100", "en-or", split="train", streaming=True)
-            pairs = []
-            for item in dataset:
+            odia_dataset = load_dataset("opus100", "en-or", split="train", streaming=True)
+            count = 0
+            for item in odia_dataset:
                 trans = item.get("translation", {})
                 src = trans.get("en", "")
                 tgt = trans.get("or", "")
                 if src and tgt:
                     pairs.append({
-                        "source": src,
+                        "source": f"translate English to Odia: {src}",
                         "target": tgt
                     })
-                if len(pairs) >= max_pairs:
+                    count += 1
+                if count >= max_subset_pairs:
                     break
-            
-            os.makedirs(os.path.dirname(output_file), exist_ok=True)
-            with open(output_file, "w", encoding="utf-8") as f:
-                json.dump(pairs, f, ensure_ascii=False, indent=2)
-                
-            print(f"[Success] Fallback successful! Saved {len(pairs)} OPUS-100 pairs to {output_file}!")
-        except Exception as fallback_err:
-            print(f"[Error] Fallback dataset failed: {fallback_err}")
+            print(f"[Success] Fallback extracted {count} English-to-Odia pairs.")
+        except Exception as fe:
+            print(f"[Error] Fallback failed: {fe}")
+
+    # 2. Pull Hindi-to-English translation pairs
+    print("[Fetch] Loading Hindi-English dataset from IIT Bombay / OPUS...")
+    try:
+        # Load Hindi-English dataset from IIT Bombay English-Hindi corpus
+        hi_en_dataset = load_dataset("cfilt/iitb-english-hindi", split="train", streaming=True)
+        count = 0
+        for item in hi_en_dataset:
+            trans = item.get("translation", {})
+            src = trans.get("hi", "")
+            tgt = trans.get("en", "")
+            if src and tgt:
+                pairs.append({
+                    "source": f"translate Hindi to English: {src}",
+                    "target": tgt
+                })
+                count += 1
+            if count >= max_subset_pairs:
+                break
+        print(f"[Success] Extracted {count} Hindi-to-English pairs.")
+    except Exception as e:
+        print(f"[Error] Failed to load Hindi-English dataset: {e}")
+
+    # Shuffle the dataset to mix the tasks during training
+    random.shuffle(pairs)
+
+    if len(pairs) == 0:
+        print("[Error] No sentence pairs extracted.")
+        return
+
+    # Save to local JSON file
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    with open(output_file, "w", encoding="utf-8") as f:
+        json.dump(pairs, f, ensure_ascii=False, indent=2)
+        
+    print(f"[Success] Multi-task dataset prepared! Saved {len(pairs)} mixed pairs to {output_file}!")
 
 if __name__ == "__main__":
     main()
