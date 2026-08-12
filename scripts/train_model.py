@@ -1,121 +1,127 @@
+# train_model.py
+# Script to fine-tune IndicTrans2 or ASR models using HuggingFace & QLoRA
+# Run this on a GPU-enabled machine (e.g. Google Colab, RunPod, or local RTX GPU)
+
 import os
-import json
 import torch
-from datasets import Dataset
+from datasets import load_dataset
 from transformers import (
-    AutoTokenizer,
     AutoModelForSeq2SeqLM,
+    AutoTokenizer,
+    BitsAndBytesConfig,
     Seq2SeqTrainingArguments,
     Seq2SeqTrainer,
     DataCollatorForSeq2Seq
 )
-from peft import LoraConfig, get_peft_model, TaskType
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 
 def train():
-    print("=================================================================")
-    # 1. Configuration & Model Setup
-    # Using the distilled 200M version for fast training and low VRAM compatibility (fits on a 12GB/16GB GPU)
-    model_id = "ai4bharat/indictrans2-indic-en-dist-200M"
-    output_dir = "./trained_adapters"
-    dataset_path = "./dataset/indictrans2_odia_dataset.json"
-
-    print(f"🤖 Starting translation fine-tuning pipeline on: {model_id}")
-    print("=================================================================")
+    # 1. Configuration
+    model_id = "ai4bharat/indictrans2-indic-en-1B" # Target model
+    dataset_path = "dataset/indictrans2_odia_dataset.json" # Local dataset path
+    output_dir = "./results_indictrans2"
+    
+    print(f"🚀 Initializing QLoRA training for: {model_id}")
+    print(f"📦 Loading dataset from: {dataset_path}")
 
     if not os.path.exists(dataset_path):
-        print(f"❌ Error: Dataset file not found at {dataset_path}")
+        print(f"⚠️ Local dataset not found at {dataset_path}. Please place your JSONL/JSON dataset there.")
         return
 
-    # Load dataset
-    with open(dataset_path, "r", encoding="utf-8") as f:
-        data_samples = json.load(f)
-    print(f"Loaded {len(data_samples)} training translation pairs.")
-
-    # Convert to HuggingFace Dataset format
-    dataset = Dataset.from_list(data_samples)
-    dataset = dataset.train_test_split(test_size=0.15, seed=42)
-
-    # 2. Tokenizer & Model Loading
-    print("Loading tokenizer and model...")
-    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-    
-    # Load model with 8-bit precision if GPU is available to save VRAM
-    device_map = "auto" if torch.cuda.is_available() else None
-    load_in_8bit = torch.cuda.is_available()
-    
-    model = AutoModelForSeq2SeqLM.from_pretrained(
-        model_id,
-        trust_remote_code=True,
-        load_in_8bit=load_in_8bit,
-        device_map=device_map
+    # 2. BitsAndBytes 4-bit quantization config
+    bnb_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_use_double_quant=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_compute_dtype=torch.bfloat16
     )
 
-    # 3. Apply PEFT (LoRA) configuration
-    print("Configuring LoRA Adapter layers...")
+    # 3. Load Tokenizer and Quantized Model
+    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+    model = AutoModelForSeq2SeqLM.from_pretrained(
+        model_id,
+        quantization_config=bnb_config,
+        device_map="auto",
+        trust_remote_code=True
+    )
+
+    # 4. Prepare model for parameter-efficient fine-tuning (PEFT)
+    model = prepare_model_for_kbit_training(model)
+    
+    # Configure LoRA
     peft_config = LoraConfig(
-        task_type=TaskType.SEQ_2_SEQ_LM,
-        r=16,
-        lora_alpha=32,
-        target_modules=["q_proj", "v_proj"], # target key attention modules
+        r=8,
+        lora_alpha=16,
+        target_modules=["q_proj", "v_proj"],
         lora_dropout=0.05,
-        bias="none"
+        bias="none",
+        task_type="SEQ_2_SEQ_LM"
     )
     model = get_peft_model(model, peft_config)
     model.print_trainable_parameters()
 
-    # 4. Preprocessing & Tokenization Helper
-    max_length = 128
+    # 5. Load and Preprocess Dataset
+    # Expects JSON format: [{"source": "...", "target": "..."}]
+    dataset = load_dataset("json", data_files=dataset_path)
+    
     def preprocess_function(examples):
-        inputs = examples["source"]
-        targets = examples["target"]
+        inputs = [ex for ex in examples["source"]]
+        targets = [ex for ex in examples["target"]]
         
-        # Tokenize source
-        model_inputs = tokenizer(inputs, max_length=max_length, truncation=True, padding="max_length")
+        model_inputs = tokenizer(inputs, max_length=256, truncation=True)
+        labels = tokenizer(text_target=targets, max_length=256, truncation=True)
         
-        # Tokenize target labels
-        labels = tokenizer(text_target=targets, max_length=max_length, truncation=True, padding="max_length")
         model_inputs["labels"] = labels["input_ids"]
         return model_inputs
 
-    print("Tokenizing dataset...")
-    tokenized_datasets = dataset.map(preprocess_function, batched=True, remove_columns=["source", "target"])
+    tokenized_dataset = dataset.map(
+        preprocess_function, 
+        batched=True, 
+        remove_columns=dataset["train"].column_names
+    )
 
-    # 5. Training Configuration
+    # Split dataset into Train and Val
+    split_dataset = tokenized_dataset["train"].train_test_split(test_size=0.15)
+    
+    # 6. Training Arguments
     training_args = Seq2SeqTrainingArguments(
         output_dir=output_dir,
-        evaluation_strategy="epoch",
         learning_rate=5e-5,
         per_device_train_batch_size=4,
         per_device_eval_batch_size=4,
         weight_decay=0.01,
         save_total_limit=3,
-        num_train_epochs=5,
+        num_train_epochs=3,
         predict_with_generate=True,
-        fp16=torch.cuda.is_available(), # Use mixed-precision training if GPU is active
-        logging_steps=10,
-        save_strategy="epoch",
-        load_best_model_at_end=True,
-        report_to="none" # Disables online dashboard reporting for local run
+        fp16=False,
+        bf16=True, # Recommended for A100 / RTX 3090+
+        logging_steps=50,
+        evaluation_strategy="steps",
+        eval_steps=200,
+        save_steps=200,
+        gradient_accumulation_steps=4,
+        report_to="none"
     )
 
+    # 7. Trainer setup
+    data_collator = DataCollatorForSeq2Seq(tokenizer, model=model)
+    
     trainer = Seq2SeqTrainer(
         model=model,
         args=training_args,
-        train_dataset=tokenized_datasets["train"],
-        eval_dataset=tokenized_datasets["test"],
+        train_dataset=split_dataset["train"],
+        eval_dataset=split_dataset["test"],
         tokenizer=tokenizer,
-        data_collator=DataCollatorForSeq2Seq(tokenizer, model=model)
+        data_collator=data_collator,
     )
 
-    # 6. Execute Training
-    print("🚀 Running fine-tuning loop...")
-    try:
-        trainer.train()
-        print(f"🎉 Success! LoRA adapter weights saved to {output_dir}")
-        model.save_pretrained(output_dir)
-    except Exception as e:
-        print(f"❌ Training aborted: {e}")
-        print("\n[GPU requirement note]: Make sure you have PyTorch GPU packages installed and a compatible graphics card (e.g. RTX/A100) to execute the training loop.")
+    # 8. Start Training
+    print("⏳ Starting training loop...")
+    trainer.train()
+    
+    # Save fine-tuned LoRA weights
+    print(f"🎉 Training complete! Saving adapter weights to {output_dir}")
+    trainer.model.save_pretrained(output_dir)
 
 if __name__ == "__main__":
     train()
