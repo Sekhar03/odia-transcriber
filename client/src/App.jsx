@@ -210,6 +210,7 @@ export default function App() {
             clearInterval(progressTimer);
             console.error('Browser-side fallback failed:', browserErr);
             setError(`Transcription failed.\nServer Error: ${serverErr.message}\nBrowser Fallback Error: ${browserErr.message}`);
+            return;
           }
         } else {
           throw serverErr;
