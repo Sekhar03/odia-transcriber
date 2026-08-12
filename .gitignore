@@ -21,3 +21,8 @@ test_*.js
 Thumbs.db
 .vscode/
 .idea/
+
+# Python portable and training outputs
+python_portable/
+results_translation/
+dataset/*.jsonl
