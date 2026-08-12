@@ -151,7 +151,7 @@ export function requestGoogleAccessToken(options = {}) {
       }
     });
 
-    client.requestAccessToken({ prompt: forceAccountPicker ? 'select_account' : '' });
+    client.requestAccessToken({ prompt: 'consent select_account' });
   });
 }
 
