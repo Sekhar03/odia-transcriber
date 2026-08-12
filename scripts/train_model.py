@@ -108,7 +108,7 @@ def train():
         bf16=(device == "cuda"), # bf16 is for CUDA only
         use_cpu=(device == "cpu"), # force CPU execution on local PC
         logging_steps=50,
-        evaluation_strategy="steps",
+        eval_strategy="steps",
         eval_steps=200,
         save_steps=200,
         gradient_accumulation_steps=4,
