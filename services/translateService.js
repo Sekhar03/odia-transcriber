@@ -90,7 +90,32 @@ async function translateSingleText(text, targetLang = 'or', srcLang = 'eng_Latn'
   if (!text || !text.trim()) return '';
   const cleanedInput = cleanAsrArtifacts(text);
 
-  // 1. Try AI4Bharat IndicTrans2 Model first (HuggingFace)
+  // 0. Try Local Translation Server (T5 fine-tuned model)
+  try {
+    const localRes = await fetch('http://localhost:5002/translate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: cleanedInput,
+        task: targetLang === 'en' ? 'translate Hindi to English' : 'translate English to Odia'
+      })
+    });
+    if (localRes.ok) {
+      const localData = await localRes.json();
+      if (localData.translatedText) {
+        console.log(`[Local Translation Server Success]: "${cleanedInput}" -> "${localData.translatedText}"`);
+        if (targetLang === 'or') {
+          return sanitizeOdiaForPdf(localData.translatedText);
+        }
+        return cleanAsrArtifacts(localData.translatedText);
+      }
+    }
+  } catch (err) {
+    // Fail silently and fall back to HuggingFace / Google Translate
+    console.log('[Local translation server offline or unreachable. Falling back to online APIs...]');
+  }
+
+  // 1. Try AI4Bharat IndicTrans2 Model (HuggingFace)
   try {
     const aiTranslated = await translateWithIndicTrans2(cleanedInput, srcLang, tgtLang);
     if (aiTranslated && aiTranslated.trim()) {
