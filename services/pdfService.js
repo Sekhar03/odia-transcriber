@@ -74,142 +74,69 @@ function createOdiaPDF(data, stream) {
     doc.pipe(stream);
 
     // Colors
-    const primaryColor = isEnglishTarget ? '#1e3a8a' : '#0f766e'; // Blue for English, Teal for Odia
-    const secondaryColor = isEnglishTarget ? '#2563eb' : '#0d9488';
+    const primaryColor = '#0f172a'; // Black text
+    const categoryColor = '#10b981'; // Green category (emerald)
     const speakerColor = '#b45309'; // Amber 700
     const darkTextColor = '#1e293b'; // Slate 800
     const mutedTextColor = '#64748b'; // Slate 500
-    const borderColor = '#e2e8f0';
+    const borderColor = '#cbd5e1';
 
     // ----------------------------------------------------
-    // PAGE 1: COVER PAGE
+    // PAGE 1: START DIRECTLY WITH TITLE
     // ----------------------------------------------------
-    doc.rect(0, 0, doc.page.width, doc.page.height).fill('#0f172a'); // Midnight dark cover background
-
-    // Center Banner
-    doc.rect(0, doc.page.height / 3.2, doc.page.width, 140).fill(primaryColor);
-
-    const titleText = pdfTitle || metadata.title || 'YouTube Video Dialogue';
-    doc.fillColor('#ffffff');
-    if (!isEnglishTarget && containsOdia(titleText)) {
-      doc.font(fontOdiaBold).fontSize(20)
-         .text(sanitizeTextForOdiaPdf(titleText), 50, doc.page.height / 3 + 10, { align: 'center', width: doc.page.width - 100 });
-    } else {
-      doc.font('Helvetica-Bold').fontSize(20)
-         .text(sanitizeAsciiOnly(titleText), 50, doc.page.height / 3 + 10, { align: 'center', width: doc.page.width - 100 });
-    }
-
-    doc.font('Helvetica-Bold').fontSize(12).fillColor('#99f6e4')
-       .text(isEnglishTarget ? 'SUMMARY & TRANSCRIPT DOCUMENT' : 'ସାରାଂଶ ଏବଂ ସଂଳାପ ଦସ୍ତାବିଜ୍', 50, doc.page.height / 3 + 95, { align: 'center' });
-
-    // Cover Meta Details
-    doc.fillColor('#94a3b8').font('Helvetica').fontSize(10);
-    const metaY = doc.page.height - 180;
-    doc.text(`Channel: ${sanitizeAsciiOnly(metadata.author || 'N/A')}`, 50, metaY, { align: 'center' });
-    doc.text(`Original Language: ${sanitizeAsciiOnly(sourceLanguage)}  |  Target Language: ${isEnglishTarget ? 'English' : 'Odia (ଓଡ଼ିଆ)'}`, 50, metaY + 18, { align: 'center' });
-    doc.text(`Generated On: ${new Date().toLocaleString('en-IN', { dateStyle: 'full' })}`, 50, metaY + 36, { align: 'center' });
-
-    // ----------------------------------------------------
-    // PAGE 2: EXECUTIVE SUMMARY
-    // ----------------------------------------------------
-    doc.addPage();
     doc.y = 50;
 
-    // Header banner on inner pages
-    doc.rect(0, 0, doc.page.width, 10).fill(primaryColor);
-    doc.moveDown(1.5);
-
-    // Section title
-    doc.font(isEnglishTarget ? 'Helvetica-Bold' : fontOdiaBold).fontSize(18).fillColor(primaryColor)
-       .text(isEnglishTarget ? 'Executive Summary' : 'କାର୍ଯ୍ୟନିର୍ବାହୀ ସାରାଂଶ');
+    // Green Category Label
+    doc.font('Helvetica-Bold').fontSize(9).fillColor(categoryColor)
+       .text('AUDIO TRANSLATION', { characterSpacing: 1 });
     doc.moveDown(0.5);
 
-    // Overview
-    doc.font(isEnglishTarget ? 'Helvetica-Bold' : fontOdiaBold).fontSize(12).fillColor(darkTextColor)
-       .text(isEnglishTarget ? 'Overview' : 'ସଂକ୍ଷିପ୍ତ ବିବରଣୀ');
-    doc.moveDown(0.2);
-    
-    const overviewStr = summary.overview || (isEnglishTarget ? 'No overview available.' : 'କୌଣସି ବିବରଣୀ ଉପଲବ୍ଧ ନାହିଁ।');
-    doc.font(isEnglishTarget ? 'Helvetica' : fontOdiaReg).fontSize(10).fillColor(darkTextColor)
-       .text(isEnglishTarget ? sanitizeAsciiOnly(overviewStr) : sanitizeTextForOdiaPdf(overviewStr), { align: 'justify', lineGap: 3 });
-    doc.moveDown(1.2);
-
-    // Key Points
-    doc.font(isEnglishTarget ? 'Helvetica-Bold' : fontOdiaBold).fontSize(12).fillColor(darkTextColor)
-       .text(isEnglishTarget ? 'Key Points' : 'ପ୍ରମୁଖ ବିଷୟବସ୍ତୁ');
-    doc.moveDown(0.4);
-
-    const keyPointsList = summary.keyPoints || [];
-    if (keyPointsList.length === 0) {
-      keyPointsList.push(isEnglishTarget ? 'Detailed timeline transcription is appended in the following pages.' : 'ସଂଳାପର ସମ୍ପୂର୍ଣ୍ଣ ବିବରଣୀ ପରବର୍ତ୍ତୀ ପୃଷ୍ଠାଗୁଡ଼ିକରେ ପ୍ରଦାନ କରାଯାଇଛି।');
+    // Document Title
+    const titleText = pdfTitle || metadata.title || 'YouTube Video Dialogue';
+    if (!isEnglishTarget && containsOdia(titleText)) {
+      doc.font(fontOdiaBold).fontSize(20).fillColor(primaryColor)
+         .text(sanitizeTextForOdiaPdf(titleText), { lineGap: 4 });
+    } else {
+      doc.font('Helvetica-Bold').fontSize(20).fillColor(primaryColor)
+         .text(sanitizeAsciiOnly(titleText).toUpperCase(), { lineGap: 4 });
     }
-    keyPointsList.forEach(pt => {
-      doc.font('Helvetica-Bold').fontSize(10).fillColor(secondaryColor).text('  •  ', { continued: true });
-      doc.font(isEnglishTarget ? 'Helvetica' : fontOdiaReg).fontSize(10).fillColor(darkTextColor)
-         .text(isEnglishTarget ? sanitizeAsciiOnly(pt) : sanitizeTextForOdiaPdf(pt), { lineGap: 2 });
-      doc.moveDown(0.3);
-    });
-    doc.moveDown(0.8);
+    doc.moveDown(1.5);
 
-    // Main Takeaways
-    doc.font(isEnglishTarget ? 'Helvetica-Bold' : fontOdiaBold).fontSize(12).fillColor(darkTextColor)
-       .text(isEnglishTarget ? 'Main Takeaways' : 'ମୁଖ୍ୟ ପ୍ରସଙ୍ଗ ଏବଂ ଶିକ୍ଷା');
-    doc.moveDown(0.4);
-
-    const takeawaysList = summary.takeaways || [];
-    if (takeawaysList.length === 0) {
-      takeawaysList.push(isEnglishTarget ? 'Dialogue flow and details are preserved.' : 'ସଂଳାପ ପ୍ରବାହ ଏବଂ ତଥ୍ୟ ସଂରକ୍ଷିତ ରହିଛି।');
-    }
-    takeawaysList.forEach(tk => {
-      doc.font('Helvetica-Bold').fontSize(10).fillColor(secondaryColor).text('  ✔  ', { continued: true });
-      doc.font(isEnglishTarget ? 'Helvetica' : fontOdiaReg).fontSize(10).fillColor(darkTextColor)
-         .text(isEnglishTarget ? sanitizeAsciiOnly(tk) : sanitizeTextForOdiaPdf(tk), { lineGap: 2 });
-      doc.moveDown(0.3);
-    });
-
-    // ----------------------------------------------------
-    // FOLLOWING PAGES: CLEANED DIALOGUE CONTENT BY SECTIONS
-    // ----------------------------------------------------
     const sections = summary.sections || [{ title: isEnglishTarget ? 'Dialogue Content' : 'ସଂଳାପ ବିବରଣୀ', lines }];
 
-    sections.forEach((sec, secIdx) => {
-      doc.addPage();
-      doc.y = 50;
-
-      // Section top banner
-      doc.rect(0, 0, doc.page.width, 10).fill(secondaryColor);
-      doc.moveDown(1.5);
-
-      // Section title
-      doc.font(isEnglishTarget ? 'Helvetica-Bold' : fontOdiaBold).fontSize(14).fillColor(primaryColor)
-         .text(sanitizeAsciiOnly(sec.title || `Chapter ${secIdx + 1}`));
-      doc.moveDown(0.8);
-
-      if (pdfLayout === 'monologue') {
-        doc.font(isEnglishTarget ? 'Helvetica' : fontOdiaReg).fontSize(10).fillColor(darkTextColor);
-        
-        sec.lines.forEach((line, idx) => {
-          if (doc.y > doc.page.height - 70) {
-            doc.addPage();
-            doc.y = 50;
-            doc.font(isEnglishTarget ? 'Helvetica' : fontOdiaReg).fontSize(10).fillColor(darkTextColor);
-          }
-
-          const isLast = idx === sec.lines.length - 1;
-          const speakerPrefix = `${sanitizeAsciiOnly(line.speaker || 'Speaker 1')}: `;
-          
-          doc.font('Helvetica-Bold').fontSize(9).fillColor(speakerColor).text(speakerPrefix, { continued: true });
-          
-          const txt = isEnglishTarget 
+    if (pdfLayout === 'monologue') {
+      // Continuous Monologue Paragraphs Layout
+      sections.forEach((sec) => {
+        // Merge all lines in this section into a continuous text block
+        const mergedText = sec.lines.map(line => {
+          return isEnglishTarget
             ? sanitizeAsciiOnly(line.odiaText || line.text || '')
             : sanitizeTextForOdiaPdf(line.odiaText || line.text || '');
-            
-          doc.font(isEnglishTarget ? 'Helvetica' : fontOdiaReg).fontSize(10).fillColor(darkTextColor)
-             .text(txt + '   ', { continued: !isLast, lineGap: 3 });
-        });
-        doc.moveDown(1.5);
-      } else {
-        // Table Timeline Layout
+        }).join(' ');
+
+        if (doc.y > doc.page.height - 100) {
+          doc.addPage();
+          doc.y = 50;
+        }
+
+        // Render as a clean, wrapped paragraph
+        doc.font(isEnglishTarget ? 'Helvetica' : fontOdiaReg).fontSize(10.5).fillColor(darkTextColor)
+           .text(mergedText, { align: 'justify', lineGap: 4 });
+        doc.moveDown(1.2);
+      });
+    } else {
+      // Table Timeline Layout
+      sections.forEach((sec, secIdx) => {
+        if (secIdx > 0) {
+          doc.addPage();
+          doc.y = 50;
+        }
+
+        // Section header
+        doc.font('Helvetica-Bold').fontSize(12).fillColor(categoryColor)
+           .text(sanitizeAsciiOnly(sec.title || `Chapter ${secIdx + 1}`).toUpperCase());
+        doc.moveDown(0.8);
+
         sec.lines.forEach((line, index) => {
           if (doc.y > doc.page.height - 95) {
             doc.addPage();
@@ -223,8 +150,8 @@ function createOdiaPDF(data, stream) {
           doc.rect(40, itemTop, doc.page.width - 80, cardHeight).fill(bg);
 
           // Timestamp Pill
-          doc.roundedRect(48, itemTop + 8, 65, 18, 3).fill('#e0f2fe');
-          doc.font('Helvetica-Bold').fontSize(8).fillColor('#0369a1')
+          doc.roundedRect(48, itemTop + 8, 65, 18, 3).fill('#e2e8f0');
+          doc.font('Helvetica-Bold').fontSize(8).fillColor('#475569')
              .text(line.startFormatted || '00:00', 48, itemTop + 13, { width: 65, align: 'center' });
 
           // Speaker Tag
@@ -255,29 +182,42 @@ function createOdiaPDF(data, stream) {
 
             if (isEnglishTarget) {
               const txt = sanitizeAsciiOnly(line.odiaText || '').substring(0, 150);
-              doc.font('Helvetica-Bold').fontSize(10).fillColor(primaryColor)
+              doc.font('Helvetica-Bold').fontSize(10).fillColor(categoryColor)
                  .text(txt, 130 + colWidth, itemTop + 22, { width: colWidth, height: 35 });
             } else {
               const odiaTxt = sanitizeTextForOdiaPdf(line.odiaText || '').substring(0, 150);
-              doc.font(fontOdiaBold).fontSize(10).fillColor(primaryColor)
+              doc.font(fontOdiaBold).fontSize(10).fillColor(categoryColor)
                  .text(odiaTxt, 130 + colWidth, itemTop + 22, { width: colWidth, height: 35 });
             }
           }
 
           doc.y = itemTop + cardHeight + 4;
         });
-      }
-    });
+      });
+    }
 
-    // Page Numbers Footer on pages 2+
+    // Page Numbers & Dividers Footer
     const range = doc.bufferedPageRange();
-    for (let i = range.start + 1; i < range.start + range.count; i++) {
+    for (let i = range.start; i < range.start + range.count; i++) {
       doc.switchToPage(i);
+      
+      // Draw horizontal line
+      doc.moveTo(50, doc.page.height - 45)
+         .lineTo(doc.page.width - 50, doc.page.height - 45)
+         .lineWidth(0.5)
+         .strokeColor(borderColor)
+         .stroke();
+         
+      // Left side text: e.g. "Odia Audio Translation"
+      const footerLabel = isEnglishTarget ? 'English Audio Translation' : 'Odia Audio Translation';
       doc.font('Helvetica').fontSize(8).fillColor(mutedTextColor)
-         .text(`YouTube Transcriber  •  ${isEnglishTarget ? 'English Dialogue' : 'Odia Dialogue'}  •  Page ${i + 1} of ${range.count}`, 40, doc.page.height - 25, {
-           width: doc.page.width - 80,
-           align: 'center'
-         });
+         .text(footerLabel, 50, doc.page.height - 35, { align: 'left' });
+         
+      // Right side text: "Page X of Y"
+      doc.text(`Page ${i + 1} of ${range.count}`, doc.page.width - 150, doc.page.height - 35, {
+        width: 100,
+        align: 'right'
+      });
     }
 
     doc.end();
