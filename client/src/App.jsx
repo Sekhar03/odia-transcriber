@@ -200,10 +200,17 @@ export default function App() {
       try {
         data = await transcribeFromServer(finalUrl, selectedLang, progressTimer);
       } catch (serverErr) {
+        console.error('Server-side transcription failed:', serverErr);
         if (googleConfigured) {
           // Restart progress simulator since transcribeFromServer clears the previous timer on exit
           progressTimer = simulateProgress();
-          data = await transcribeFromBrowserCaptions(finalUrl, selectedLang, progressTimer);
+          try {
+            data = await transcribeFromBrowserCaptions(finalUrl, selectedLang, progressTimer);
+          } catch (browserErr) {
+            clearInterval(progressTimer);
+            console.error('Browser-side fallback failed:', browserErr);
+            setError(`Transcription failed.\nServer Error: ${serverErr.message}\nBrowser Fallback Error: ${browserErr.message}`);
+          }
         } else {
           throw serverErr;
         }
