@@ -1,6 +1,5 @@
 {
   "version": 2,
-  "description": "Trigger build v1.1.0",
   "buildCommand": "npx vite build client",
   "outputDirectory": "client/dist",
   "env": {
