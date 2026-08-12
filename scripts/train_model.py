@@ -17,9 +17,9 @@ from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 
 def train():
     # 1. Configuration
-    model_id = "ai4bharat/indictrans2-indic-en-1B" # Target model
+    model_id = "Helsinki-NLP/opus-mt-hi-en" # Open translation model (no gate, fast CPU training)
     dataset_path = "dataset/indictrans2_odia_dataset.json" # Local dataset path
-    output_dir = "./results_indictrans2"
+    output_dir = "./results_translation"
     
     print(f"[Training] Initializing QLoRA training for: {model_id}")
     print(f"[Data] Loading dataset from: {dataset_path}")
