@@ -106,7 +106,7 @@ def train():
         predict_with_generate=True,
         fp16=False,
         bf16=(device == "cuda"), # bf16 is for CUDA only
-        no_cuda=(device == "cpu"), # force CPU execution on local PC
+        use_cpu=(device == "cpu"), # force CPU execution on local PC
         logging_steps=50,
         evaluation_strategy="steps",
         eval_steps=200,
