@@ -28,37 +28,48 @@ def train():
         print(f"⚠️ Local dataset not found at {dataset_path}. Please place your JSONL/JSON dataset there.")
         return
 
-    # 2. BitsAndBytes 4-bit quantization config
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_use_double_quant=True,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=torch.bfloat16
-    )
+    # 2. Check for CUDA / GPU
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Selected compute device: {device.toUpperCase()}")
 
-    # 3. Load Tokenizer and Quantized Model
+    # 3. Load Tokenizer and Model
     tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-    model = AutoModelForSeq2SeqLM.from_pretrained(
-        model_id,
-        quantization_config=bnb_config,
-        device_map="auto",
-        trust_remote_code=True
-    )
-
-    # 4. Prepare model for parameter-efficient fine-tuning (PEFT)
-    model = prepare_model_for_kbit_training(model)
     
-    # Configure LoRA
-    peft_config = LoraConfig(
-        r=8,
-        lora_alpha=16,
-        target_modules=["q_proj", "v_proj"],
-        lora_dropout=0.05,
-        bias="none",
-        task_type="SEQ_2_SEQ_LM"
-    )
-    model = get_peft_model(model, peft_config)
-    model.print_trainable_parameters()
+    if device == "cuda":
+        # 4-bit quantization config (CUDA only)
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.bfloat16
+        )
+        model = AutoModelForSeq2SeqLM.from_pretrained(
+            model_id,
+            quantization_config=bnb_config,
+            device_map="auto",
+            trust_remote_code=True
+        )
+        model = prepare_model_for_kbit_training(model)
+        
+        # Configure LoRA adapter
+        peft_config = LoraConfig(
+            r=8,
+            lora_alpha=16,
+            target_modules=["q_proj", "v_proj"],
+            lora_dropout=0.05,
+            bias="none",
+            task_type="SEQ_2_SEQ_LM"
+        )
+        model = get_peft_model(model, peft_config)
+        model.print_trainable_parameters()
+    else:
+        # Load standard model in full precision on CPU
+        print("⚠️ CUDA GPU not found. Loading model in full precision on CPU...")
+        model = AutoModelForSeq2SeqLM.from_pretrained(
+            model_id,
+            device_map="cpu",
+            trust_remote_code=True
+        )
 
     # 5. Load and Preprocess Dataset
     # Expects JSON format: [{"source": "...", "target": "..."}]
@@ -94,7 +105,8 @@ def train():
         num_train_epochs=3,
         predict_with_generate=True,
         fp16=False,
-        bf16=True, # Recommended for A100 / RTX 3090+
+        bf16=(device == "cuda"), # bf16 is for CUDA only
+        no_cuda=(device == "cpu"), # force CPU execution on local PC
         logging_steps=50,
         evaluation_strategy="steps",
         eval_steps=200,
