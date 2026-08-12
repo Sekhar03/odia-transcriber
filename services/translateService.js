@@ -84,24 +84,40 @@ function sanitizeOdiaForPdf(text) {
   return str.replace(/\s+/g, ' ').trim();
 }
 
-async function translateSingleText(text, targetLang = 'or') {
+const { translateWithIndicTrans2 } = require('./indicAiService');
+
+async function translateSingleText(text, targetLang = 'or', srcLang = 'eng_Latn', tgtLang = 'ory_Orya') {
   if (!text || !text.trim()) return '';
   const cleanedInput = cleanAsrArtifacts(text);
 
-  // Always translate to target language to support Hinglish-to-English translation.
-
+  // 1. Try AI4Bharat IndicTrans2 Model first (HuggingFace)
   try {
-    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=` + encodeURIComponent(cleanedInput);
+    const aiTranslated = await translateWithIndicTrans2(cleanedInput, srcLang, tgtLang);
+    if (aiTranslated && aiTranslated.trim()) {
+      if (targetLang === 'or') {
+        return sanitizeOdiaForPdf(aiTranslated);
+      }
+      return cleanAsrArtifacts(aiTranslated);
+    }
+  } catch (err) {
+    console.warn('[IndicTrans2 translation failed, falling back to Google Translate]:', err.message);
+  }
+
+  // 2. Fallback to Google Translate API using POST request (prevents 413 URL Too Large error)
+  try {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t`;
     
-    // 3.5s timeout for fast execution on Vercel
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3500);
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
 
     const res = await fetch(url, {
-      signal: controller.signal,
+      method: 'POST',
       headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      }
+      },
+      body: 'q=' + encodeURIComponent(cleanedInput),
+      signal: controller.signal
     });
 
     clearTimeout(timeoutId);
@@ -149,7 +165,13 @@ async function translateLinesToTargetLanguage(lines, targetLang = 'or', onProgre
     batches.map(async (batch) => {
       try {
         const promptText = batch.map((l, idx) => '[[' + (idx + 1) + ']] ' + cleanAsrArtifacts(l.text)).join('\n');
-        const translatedStr = await translateSingleText(promptText, targetLang);
+        
+        // Auto-detect source script for model selection
+        const hasHindi = /[\u0900-\u097F]/.test(promptText);
+        const srcLang = hasHindi ? 'hin_Deva' : 'eng_Latn';
+        const tgtLang = targetLang === 'en' ? 'eng_Latn' : 'ory_Orya';
+
+        const translatedStr = await translateSingleText(promptText, targetLang, srcLang, tgtLang);
         const parts = translatedStr.split(/\[\[\d+\]\]/);
 
         return batch.map((l, idx) => {

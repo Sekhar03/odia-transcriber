@@ -41,20 +41,25 @@ async function queryHuggingFaceModel(modelId, payload, apiKey = process.env.HF_T
 /**
  * Translate using AI4Bharat IndicTrans2 1B model format
  */
-async function translateWithIndicTrans2(text, srcLang = 'eng_Latn') {
+async function translateWithIndicTrans2(text, srcLang = 'hin_Deva', tgtLang = 'ory_Orya') {
   if (!text || !text.trim()) return '';
 
   const payload = {
     inputs: text,
     parameters: {
       src_lang: srcLang,
-      tgt_lang: AI4BHARAT_CONFIG.targetLanguage
+      tgt_lang: tgtLang
     }
   };
 
-  const modelId = srcLang === 'eng_Latn' 
-    ? AI4BHARAT_CONFIG.enToOdiaModel 
-    : AI4BHARAT_CONFIG.indicToOdiaModel;
+  let modelId;
+  if (tgtLang === 'eng_Latn') {
+    modelId = 'ai4bharat/indictrans2-indic-en-1B';
+  } else {
+    modelId = srcLang === 'eng_Latn' 
+      ? AI4BHARAT_CONFIG.enToOdiaModel 
+      : AI4BHARAT_CONFIG.indicToOdiaModel;
+  }
 
   const response = await queryHuggingFaceModel(modelId, payload);
   if (response && Array.isArray(response) && response[0]?.generated_text) {
@@ -62,6 +67,15 @@ async function translateWithIndicTrans2(text, srcLang = 'eng_Latn') {
   }
   if (response && response.translation_text) {
     return response.translation_text;
+  }
+
+  // Fallback to distilled/smaller model if 1B fails or is rate-limited
+  if (tgtLang === 'eng_Latn') {
+    const fallbackModel = 'ai4bharat/indictrans2-indic-en-dist-200M';
+    const fallbackResponse = await queryHuggingFaceModel(fallbackModel, payload);
+    if (fallbackResponse && Array.isArray(fallbackResponse) && fallbackResponse[0]?.generated_text) {
+      return fallbackResponse[0].generated_text;
+    }
   }
 
   return null; // fallback to primary translation engine if HF key/local server not active
