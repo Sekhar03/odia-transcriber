@@ -981,5 +981,7 @@ module.exports = {
   extractVideoId,
   formatTime,
   getYouTubeData,
-  buildYouTubeDataFromRawItems
+  buildYouTubeDataFromRawItems,
+  parseUniversalCaptions,
+  getYouTubeMetadata
 };

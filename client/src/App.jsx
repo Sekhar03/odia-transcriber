@@ -120,6 +120,70 @@ export default function App() {
     setGoogleUserProfile(null);
   };
 
+  const fetchCaptionsViaCorsProxy = async (videoId) => {
+    const proxies = [
+      (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+      (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
+    ];
+
+    const langAttempts = ['hi', 'en', 'or', 'en-US', 'hi-IN'];
+    const formats = ['srv3', 'vtt', 'ttml'];
+
+    for (const proxy of proxies) {
+      for (const lang of langAttempts) {
+        for (const fmt of formats) {
+          try {
+            const targetUrl = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=${lang}&fmt=${fmt}&caps=asr`;
+            const proxyUrl = proxy(targetUrl);
+            const res = await fetch(proxyUrl, { headers: { 'Accept': 'text/plain,text/vtt,*/*' } });
+            if (res.ok) {
+              const body = await res.text();
+              if (body && body.trim() && !body.includes('Error') && !body.includes('Access Denied')) {
+                return { body, lang };
+              }
+            }
+          } catch (e) {
+            console.warn('Proxy fetch failed:', e);
+          }
+        }
+      }
+    }
+    return null;
+  };
+
+  const transcribeFromBrowserCorsProxy = async (finalUrl, selectedLang, progressTimer) => {
+    const videoId = extractVideoId(finalUrl);
+    if (!videoId) {
+      throw new Error('Invalid YouTube URL.');
+    }
+
+    const fetched = await fetchCaptionsViaCorsProxy(videoId);
+    if (!fetched) {
+      throw new Error('CORS proxies could not fetch captions.');
+    }
+
+    const res = await fetch(`${API_BASE_URL}/api/transcribe-lines`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        rawItems: [],
+        rawBody: fetched.body,
+        sourceLanguage: fetched.lang,
+        targetLang: selectedLang,
+        metadata: { videoId }
+      })
+    });
+
+    const data = await res.json();
+    clearInterval(progressTimer);
+
+    if (!data.success) {
+      throw new Error(data.error || 'Failed to translate captions.');
+    }
+
+    return data;
+  };
+
   const transcribeFromBrowserCaptions = async (finalUrl, selectedLang, progressTimer) => {
     const videoId = extractVideoId(finalUrl);
     if (!videoId) {
@@ -201,19 +265,30 @@ export default function App() {
         data = await transcribeFromServer(finalUrl, selectedLang, progressTimer);
       } catch (serverErr) {
         console.error('Server-side transcription failed:', serverErr);
-        if (googleConfigured) {
-          // Restart progress simulator since transcribeFromServer clears the previous timer on exit
-          progressTimer = simulateProgress();
-          try {
-            data = await transcribeFromBrowserCaptions(finalUrl, selectedLang, progressTimer);
-          } catch (browserErr) {
+        
+        // Try browser-side CORS proxy next (does not require sign-in)
+        progressTimer = simulateProgress();
+        try {
+          data = await transcribeFromBrowserCorsProxy(finalUrl, selectedLang, progressTimer);
+        } catch (corsErr) {
+          console.error('CORS proxy transcription failed:', corsErr);
+          
+          // As a last resort, fall back to Google Sign-In (requires ownership)
+          if (googleConfigured) {
+            progressTimer = simulateProgress();
+            try {
+              data = await transcribeFromBrowserCaptions(finalUrl, selectedLang, progressTimer);
+            } catch (browserErr) {
+              clearInterval(progressTimer);
+              console.error('Browser-side fallback failed:', browserErr);
+              setError(`Transcription failed.\nServer Error: ${serverErr.message}\nCORS Proxy Error: ${corsErr.message}\nBrowser Fallback Error: ${browserErr.message}`);
+              return;
+            }
+          } else {
             clearInterval(progressTimer);
-            console.error('Browser-side fallback failed:', browserErr);
-            setError(`Transcription failed.\nServer Error: ${serverErr.message}\nBrowser Fallback Error: ${browserErr.message}`);
+            setError(`Transcription failed.\nServer Error: ${serverErr.message}\nCORS Proxy Error: ${corsErr.message}`);
             return;
           }
-        } else {
-          throw serverErr;
         }
       }
 

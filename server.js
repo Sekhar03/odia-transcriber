@@ -3,7 +3,7 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const { execSync } = require('child_process');
-const { getYouTubeData, buildYouTubeDataFromRawItems } = require('./services/youtubeService');
+const { getYouTubeData, buildYouTubeDataFromRawItems, parseUniversalCaptions, getYouTubeMetadata } = require('./services/youtubeService');
 const { translateLinesToTargetLanguage, translateSingleText } = require('./services/translateService');
 const { createOdiaPDF } = require('./services/pdfService');
 
@@ -82,13 +82,27 @@ app.post('/api/transcribe', async (req, res) => {
   }
 });
 
-// API: Translate pre-extracted caption lines (from browser-side Google auth)
+// API: Translate pre-extracted caption lines (from browser-side Google auth or CORS proxy)
 app.post('/api/transcribe-lines', async (req, res) => {
   try {
-    const { rawItems = [], metadata = {}, sourceLanguage, targetLang = 'or' } = req.body;
+    const { rawItems = [], rawBody = '', metadata = {}, sourceLanguage, targetLang = 'or' } = req.body;
 
-    if (!rawItems.length) {
+    let items = rawItems;
+    if (rawBody) {
+      items = parseUniversalCaptions(rawBody, sourceLanguage || 'en');
+    }
+
+    if (!items.length) {
       return res.status(400).json({ success: false, error: 'No caption lines provided.' });
+    }
+
+    let finalMetadata = metadata;
+    if (!finalMetadata.title && finalMetadata.videoId) {
+      try {
+        finalMetadata = await getYouTubeMetadata(finalMetadata.videoId);
+      } catch (metadataErr) {
+        console.error('Failed to fetch metadata on server:', metadataErr.message);
+      }
     }
 
     const progressLogs = [];
@@ -97,7 +111,7 @@ app.post('/api/transcribe-lines', async (req, res) => {
       progressLogs.push(step);
     };
 
-    const ytData = await buildYouTubeDataFromRawItems(rawItems, metadata, sourceLanguage, onProgressUpdate);
+    const ytData = await buildYouTubeDataFromRawItems(items, finalMetadata, sourceLanguage, onProgressUpdate);
     const translatedLines = await translateLinesToTargetLanguage(ytData.lines, targetLang, onProgressUpdate);
 
     return res.json({
