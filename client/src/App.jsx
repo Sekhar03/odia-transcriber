@@ -126,26 +126,45 @@ export default function App() {
       (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
     ];
 
-    const langAttempts = ['hi', 'en', 'or', 'en-US', 'hi-IN'];
-    const formats = ['srv3', 'vtt', 'ttml'];
-
     for (const proxy of proxies) {
-      for (const lang of langAttempts) {
-        for (const fmt of formats) {
+      try {
+        // Step 1: Fetch list of available languages
+        const listUrl = `https://www.youtube.com/api/timedtext?v=${videoId}&type=list`;
+        const proxyListUrl = proxy(listUrl);
+        const listRes = await fetch(proxyListUrl);
+        if (!listRes.ok) continue;
+
+        const listBody = await listRes.text();
+        if (!listBody || listBody.includes('Error') || listBody.includes('Access Denied')) continue;
+
+        // Parse language codes
+        const langCodes = [...listBody.matchAll(/lang_code="([^"]+)"/g)].map(m => m[1]);
+        if (!langCodes.length) continue;
+
+        // Pick priority language
+        const priority = ['or', 'hi', 'en'];
+        let bestLang = langCodes.find(l => priority.includes(l)) 
+          || langCodes.find(l => l.startsWith('en') || l.startsWith('hi'))
+          || langCodes[0];
+
+        // Step 2: Fetch the chosen caption track
+        for (const fmt of ['srv3', 'vtt', 'ttml']) {
           try {
-            const targetUrl = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=${lang}&fmt=${fmt}&caps=asr`;
-            const proxyUrl = proxy(targetUrl);
-            const res = await fetch(proxyUrl, { headers: { 'Accept': 'text/plain,text/vtt,*/*' } });
-            if (res.ok) {
-              const body = await res.text();
-              if (body && body.trim() && !body.includes('Error') && !body.includes('Access Denied')) {
-                return { body, lang };
+            const trackUrl = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=${bestLang}&fmt=${fmt}&caps=asr`;
+            const proxyTrackUrl = proxy(trackUrl);
+            const trackRes = await fetch(proxyTrackUrl, { headers: { 'Accept': 'text/plain,text/vtt,*/*' } });
+            if (trackRes.ok) {
+              const trackBody = await trackRes.text();
+              if (trackBody && trackBody.trim() && !trackBody.includes('Error')) {
+                return { body: trackBody, lang: bestLang };
               }
             }
           } catch (e) {
-            console.warn('Proxy fetch failed:', e);
+            console.warn('Proxy track fetch failed:', e);
           }
         }
+      } catch (e) {
+        console.warn('Proxy list fetch failed:', e);
       }
     }
     return null;
