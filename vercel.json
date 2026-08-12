@@ -2,6 +2,11 @@
   "version": 2,
   "buildCommand": "npx vite build client",
   "outputDirectory": "client/dist",
+  "env": {
+    "HF_MODEL_ID": "Helsinki-NLP/opus-mt-hi-en",
+    "HF_TOKEN": "@hf_token",
+    "GEMINI_API_KEY": "@gemini_api_key"
+  },
   "functions": {
     "api/**/*.js": {
       "memory": 1024,
