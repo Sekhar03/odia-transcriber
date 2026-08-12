@@ -88,9 +88,7 @@ async function translateSingleText(text, targetLang = 'or') {
   if (!text || !text.trim()) return '';
   const cleanedInput = cleanAsrArtifacts(text);
 
-  if (targetLang === 'en' && /^[\x00-\x7F\s.,!?:;()"-]+$/.test(cleanedInput)) {
-    return cleanedInput;
-  }
+  // Always translate to target language to support Hinglish-to-English translation.
 
   try {
     const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=` + encodeURIComponent(cleanedInput);
