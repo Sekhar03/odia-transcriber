@@ -17,7 +17,7 @@ from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 
 def train():
     # 1. Configuration
-    model_id = "Helsinki-NLP/opus-mt-hi-en" # Open translation model (no gate, fast CPU training)
+    model_id = "t5-small" # Open standard Seq2Seq model (fully compatible, lightweight for CPU training)
     dataset_path = "dataset/indictrans2_odia_dataset.json" # Local dataset path
     output_dir = "./results_translation"
     
