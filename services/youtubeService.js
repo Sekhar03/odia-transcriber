@@ -808,6 +808,61 @@ function applyInnerTubeMetadata(metadata, innerTubeRes) {
   }
 }
 
+async function fetchViaYoutubeTranscriptAI(videoId, debugLogs = []) {
+  debugLogs.push('[youtube-transcript.ai] Trying public youtube-transcript.ai service...');
+  const url = `https://youtube-transcript.ai/transcript/${videoId}.txt`;
+  
+  try {
+    const res = await fetchWithTimeout(url, { headers: { 'User-Agent': WEB_UA } }, 8000);
+    if (!res.ok) {
+      debugLogs.push(`[youtube-transcript.ai] HTTP ${res.status}`);
+      return null;
+    }
+    
+    const text = await res.text();
+    if (!text || !text.trim() || text.includes('Error')) {
+      debugLogs.push('[youtube-transcript.ai] Invalid or error response');
+      return null;
+    }
+    
+    const lines = text.split('\n');
+    const rawItems = [];
+    
+    for (const line of lines) {
+      const match = line.match(/^\[(?:(\d+):)?(\d+):(\d+)\]\s+(.*)$/);
+      if (match) {
+        const hrs = parseInt(match[1] || '0', 10);
+        const mins = parseInt(match[2], 10);
+        const secs = parseInt(match[3], 10);
+        const offsetMs = (hrs * 3600 + mins * 60 + secs) * 1000;
+        const textContent = match[4].trim();
+        
+        rawItems.push({
+          text: textContent,
+          offset: offsetMs,
+          duration: 3000
+        });
+      }
+    }
+    
+    for (let i = 0; i < rawItems.length; i++) {
+      if (i < rawItems.length - 1) {
+        const nextOffset = rawItems[i + 1].offset;
+        const diff = nextOffset - rawItems[i].offset;
+        rawItems[i].duration = Math.max(diff, 500);
+      }
+    }
+    
+    if (rawItems.length > 0) {
+      debugLogs.push(`[youtube-transcript.ai] SUCCESS! Extracted ${rawItems.length} lines.`);
+      return { rawItems };
+    }
+  } catch (err) {
+    debugLogs.push(`[youtube-transcript.ai] Failed: ${err.message}`);
+  }
+  return null;
+}
+
 async function getYouTubeData(url, onProgressUpdate, debugLogs = []) {
   const videoId = extractVideoId(url);
   if (!videoId) {
@@ -824,6 +879,15 @@ async function getYouTubeData(url, onProgressUpdate, debugLogs = []) {
 
   const customYoutubeFetch = (fetchUrl, options = {}) =>
     youtubeFetch(fetchUrl, YOUTUBE_FETCH_PROFILES[1], options);
+
+  // Layer 0: Public youtube-transcript.ai API (extremely fast and cloud-friendly)
+  if (!rawItems.length) {
+    debugLogs.push('[Layer 0] youtube-transcript.ai API...');
+    const transcriptAiRes = await fetchViaYoutubeTranscriptAI(videoId, debugLogs);
+    if (transcriptAiRes?.rawItems?.length) {
+      rawItems = transcriptAiRes.rawItems;
+    }
+  }
 
   // Layer 1: InnerTube direct API (best for Vercel/serverless)
   if (!rawItems.length) {
