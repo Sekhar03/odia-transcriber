@@ -189,29 +189,23 @@ export default function App() {
       return;
     }
 
-    if (isCloudDeploy && !googleAccessToken) {
-      setError('Please sign in with Google before transcribing.');
-      return;
-    }
+    // Google Sign-In is treated as a fallback, so we do not block transcription up front.
 
     setLoading(true);
     setError(null);
-    const progressTimer = simulateProgress();
+    let progressTimer = simulateProgress();
 
     try {
       let data;
-
-      if (isCloudDeploy) {
-        data = await transcribeFromBrowserCaptions(finalUrl, selectedLang, progressTimer);
-      } else {
-        try {
-          data = await transcribeFromServer(finalUrl, selectedLang, progressTimer);
-        } catch (serverErr) {
-          if (googleConfigured) {
-            data = await transcribeFromBrowserCaptions(finalUrl, selectedLang, progressTimer);
-          } else {
-            throw serverErr;
-          }
+      try {
+        data = await transcribeFromServer(finalUrl, selectedLang, progressTimer);
+      } catch (serverErr) {
+        if (googleConfigured) {
+          // Restart progress simulator since transcribeFromServer clears the previous timer on exit
+          progressTimer = simulateProgress();
+          data = await transcribeFromBrowserCaptions(finalUrl, selectedLang, progressTimer);
+        } else {
+          throw serverErr;
         }
       }
 
