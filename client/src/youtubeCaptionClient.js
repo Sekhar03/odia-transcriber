@@ -1,4 +1,4 @@
-let GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || localStorage.getItem('VITE_GOOGLE_CLIENT_ID') || '';
+let GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || localStorage.getItem('VITE_GOOGLE_CLIENT_ID') || '266009775476-keq2tprk28jscr6pnlp2ji6uk00ij61j.apps.googleusercontent.com';
 
 export function getGoogleClientId() {
   return GOOGLE_CLIENT_ID;
