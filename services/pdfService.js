@@ -186,23 +186,28 @@ function createOdiaPDF(data, stream) {
       doc.moveDown(0.8);
 
       if (pdfLayout === 'monologue') {
-        sec.lines.forEach((line) => {
-          if (doc.y > doc.page.height - 65) {
+        doc.font(isEnglishTarget ? 'Helvetica' : fontOdiaReg).fontSize(10).fillColor(darkTextColor);
+        
+        sec.lines.forEach((line, idx) => {
+          if (doc.y > doc.page.height - 70) {
             doc.addPage();
             doc.y = 50;
+            doc.font(isEnglishTarget ? 'Helvetica' : fontOdiaReg).fontSize(10).fillColor(darkTextColor);
           }
 
-          doc.font('Helvetica-Bold').fontSize(9).fillColor(speakerColor).text(`[${line.startFormatted}] ${sanitizeAsciiOnly(line.speaker || 'Speaker 1')}: `, { continued: true });
+          const isLast = idx === sec.lines.length - 1;
+          const speakerPrefix = `${sanitizeAsciiOnly(line.speaker || 'Speaker 1')}: `;
           
-          if (isEnglishTarget) {
-            const txt = sanitizeAsciiOnly(line.odiaText || line.text || '');
-            doc.font('Helvetica').fontSize(11).fillColor(darkTextColor).text(txt, { lineGap: 2 });
-          } else {
-            const odiaTxt = sanitizeTextForOdiaPdf(line.odiaText || line.text || '');
-            doc.font(fontOdiaReg).fontSize(11).fillColor(darkTextColor).text(odiaTxt, { lineGap: 2 });
-          }
-          doc.moveDown(0.5);
+          doc.font('Helvetica-Bold').fontSize(9).fillColor(speakerColor).text(speakerPrefix, { continued: true });
+          
+          const txt = isEnglishTarget 
+            ? sanitizeAsciiOnly(line.odiaText || line.text || '')
+            : sanitizeTextForOdiaPdf(line.odiaText || line.text || '');
+            
+          doc.font(isEnglishTarget ? 'Helvetica' : fontOdiaReg).fontSize(10).fillColor(darkTextColor)
+             .text(txt + '   ', { continued: !isLast, lineGap: 3 });
         });
+        doc.moveDown(1.5);
       } else {
         // Table Timeline Layout
         sec.lines.forEach((line, index) => {

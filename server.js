@@ -63,6 +63,9 @@ app.post('/api/transcribe', async (req, res) => {
 
     const ytData = await getYouTubeData(url, onProgressUpdate, debugLogs);
     
+    // Assign unique IDs to prevent duplicate mappings on identical offsets
+    ytData.lines = ytData.lines.map((l, idx) => ({ ...l, id: idx }));
+
     // Repetition Detection & Summarization
     console.log(`[API /api/transcribe] Cleaning repetitions and generating summary...`);
     const { cleanedLines, summary } = await processContent(ytData.lines, targetLang);
@@ -70,12 +73,12 @@ app.post('/api/transcribe', async (req, res) => {
     console.log(`[API /api/transcribe] Extracted ${cleanedLines.length} cleaned dialogue lines. Translating to ${targetLang}...`);
     const translatedLines = await translateLinesToTargetLanguage(cleanedLines, targetLang, onProgressUpdate);
 
-    // Update summary sections with translated lines
+    // Update summary sections with translated lines matching by unique ID
     const translatedSections = (summary.sections || []).map(sec => {
       return {
         title: sec.title,
         lines: sec.lines.map(l => {
-          const match = translatedLines.find(t => t.offset === l.offset);
+          const match = translatedLines.find(t => t.id === l.id);
           return match ? match : { ...l, odiaText: l.text };
         })
       };
@@ -141,7 +144,7 @@ app.post('/api/generate-pdf', (req, res) => {
         sections: summary.sections.map(sec => ({
           ...sec,
           lines: sec.lines.map(secLine => {
-            const match = lines.find(l => l.offset === secLine.offset);
+            const match = lines.find(l => l.id === secLine.id);
             return match ? match : secLine;
           })
         }))
