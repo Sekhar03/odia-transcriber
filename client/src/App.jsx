@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   FileText,
   Download,
@@ -90,7 +90,16 @@ export default function App() {
   const [copied, setCopied] = useState(false);
   const [googleAccessToken, setGoogleAccessToken] = useState(null);
   const [googleUserProfile, setGoogleUserProfile] = useState(null);
+  const [googleConfigured, setGoogleConfigured] = useState(isGoogleAuthConfigured());
   const iframeRef = useRef(null);
+
+  useEffect(() => {
+    const handleConfigChange = () => {
+      setGoogleConfigured(isGoogleAuthConfigured());
+    };
+    window.addEventListener('google-client-id-changed', handleConfigChange);
+    return () => window.removeEventListener('google-client-id-changed', handleConfigChange);
+  }, []);
 
   const isCloudDeploy = typeof window !== 'undefined'
     && window.location.hostname.includes('vercel.app');
@@ -198,7 +207,7 @@ export default function App() {
         try {
           data = await transcribeFromServer(finalUrl, selectedLang, progressTimer);
         } catch (serverErr) {
-          if (isGoogleAuthConfigured()) {
+          if (googleConfigured) {
             data = await transcribeFromBrowserCaptions(finalUrl, selectedLang, progressTimer);
           } else {
             throw serverErr;
@@ -219,7 +228,7 @@ export default function App() {
       });
     } catch (err) {
       clearInterval(progressTimer);
-      if (isCloudDeploy && !isGoogleAuthConfigured()) {
+      if (isCloudDeploy && !googleConfigured) {
         setError('Cloud mode requires Google Sign-In. Add VITE_GOOGLE_CLIENT_ID in Vercel environment variables and redeploy.');
       } else {
         setError(err.message || 'An error occurred during transcription.');
@@ -398,16 +407,14 @@ export default function App() {
             </div>
           </div>
 
-          {(isCloudDeploy || isGoogleAuthConfigured()) && (
-            <GoogleSignInButton
-              accessToken={googleAccessToken}
-              userProfile={googleUserProfile}
-              onSignedIn={handleGoogleSignedIn}
-              onSignedOut={handleGoogleSignedOut}
-              onError={setError}
-              compact
-            />
-          )}
+          <GoogleSignInButton
+            accessToken={googleAccessToken}
+            userProfile={googleUserProfile}
+            onSignedIn={handleGoogleSignedIn}
+            onSignedOut={handleGoogleSignedOut}
+            onError={setError}
+            compact
+          />
         </div>
       </header>
 
@@ -482,11 +489,11 @@ export default function App() {
               <Info className="w-4 h-4 mt-0.5 shrink-0 text-amber-300" />
               <p>
                 Sign in with Google to fetch captions using <strong>your YouTube account</strong> in your browser.
-                {!isGoogleAuthConfigured() && ' Add `VITE_GOOGLE_CLIENT_ID` in Vercel env vars and redeploy to enable the button.'}
+                {!googleConfigured && ' Click the button below to configure your Google Client ID.'}
               </p>
             </div>
 
-            {!googleAccessToken && isGoogleAuthConfigured() && (
+            {!googleAccessToken && (
               <GoogleSignInButton
                 accessToken={googleAccessToken}
                 userProfile={googleUserProfile}

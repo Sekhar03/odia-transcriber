@@ -1,4 +1,18 @@
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+let GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || localStorage.getItem('VITE_GOOGLE_CLIENT_ID') || '';
+
+export function getGoogleClientId() {
+  return GOOGLE_CLIENT_ID;
+}
+
+export function setGoogleClientId(id) {
+  GOOGLE_CLIENT_ID = id || '';
+  if (GOOGLE_CLIENT_ID) {
+    localStorage.setItem('VITE_GOOGLE_CLIENT_ID', GOOGLE_CLIENT_ID);
+  } else {
+    localStorage.removeItem('VITE_GOOGLE_CLIENT_ID');
+  }
+}
+
 
 export function extractVideoId(url) {
   if (!url) return null;

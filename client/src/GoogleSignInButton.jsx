@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CheckCircle2, LogOut, RefreshCw } from 'lucide-react';
 import {
   fetchGoogleUserProfile,
   isGoogleAuthConfigured,
   requestGoogleAccessToken,
-  revokeGoogleAccessToken
+  revokeGoogleAccessToken,
+  getGoogleClientId,
+  setGoogleClientId
 } from './youtubeCaptionClient';
 
 const GoogleLogo = ({ className = 'w-5 h-5' }) => (
@@ -25,12 +27,30 @@ export default function GoogleSignInButton({
   compact = false
 }) {
   const [loading, setLoading] = useState(false);
-  const configured = isGoogleAuthConfigured();
+  const [configured, setConfigured] = useState(isGoogleAuthConfigured());
+
+  useEffect(() => {
+    const handleConfigChange = () => {
+      setConfigured(isGoogleAuthConfigured());
+    };
+    window.addEventListener('google-client-id-changed', handleConfigChange);
+    return () => window.removeEventListener('google-client-id-changed', handleConfigChange);
+  }, []);
 
   const handleSignIn = async () => {
-    if (!configured) {
-      onError?.('Google Sign-In is not configured. Add VITE_GOOGLE_CLIENT_ID in Vercel env vars.');
-      return;
+    if (!isGoogleAuthConfigured()) {
+      const userInput = window.prompt(
+        "Google Sign-In is not configured.\n\n" +
+        "Please enter your Google OAuth Client ID to enable it (find it in Google Cloud Console):"
+      );
+      if (!userInput) return;
+      const trimmed = userInput.trim();
+      if (trimmed) {
+        setGoogleClientId(trimmed);
+        window.dispatchEvent(new Event('google-client-id-changed'));
+      } else {
+        return;
+      }
     }
 
     setLoading(true);
@@ -90,9 +110,9 @@ export default function GoogleSignInButton({
     <button
       type="button"
       onClick={handleSignIn}
-      disabled={loading || !configured}
+      disabled={loading}
       className={`inline-flex items-center justify-center gap-3 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 ${compact ? 'w-full' : ''}`}
-      title={configured ? 'Sign in with Google to fetch YouTube captions' : 'Configure VITE_GOOGLE_CLIENT_ID to enable sign-in'}
+      title={configured ? 'Sign in with Google to fetch YouTube captions' : 'Click to configure Google Client ID and sign in'}
     >
       {loading ? (
         <RefreshCw className="w-5 h-5 animate-spin text-slate-500" />
