@@ -3,7 +3,7 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const { execSync } = require('child_process');
-const { getYouTubeData, buildYouTubeDataFromRawItems, parseUniversalCaptions, getYouTubeMetadata } = require('./services/youtubeService');
+const { getYouTubeData } = require('./services/youtubeService');
 const { translateLinesToTargetLanguage, translateSingleText } = require('./services/translateService');
 const { createOdiaPDF } = require('./services/pdfService');
 
@@ -79,52 +79,6 @@ app.post('/api/transcribe', async (req, res) => {
       error: err.message,
       debugLogs
     });
-  }
-});
-
-// API: Translate pre-extracted caption lines (from browser-side Google auth or CORS proxy)
-app.post('/api/transcribe-lines', async (req, res) => {
-  try {
-    const { rawItems = [], rawBody = '', metadata = {}, sourceLanguage, targetLang = 'or' } = req.body;
-
-    let items = rawItems;
-    if (rawBody) {
-      items = parseUniversalCaptions(rawBody, sourceLanguage || 'en');
-    }
-
-    if (!items.length) {
-      return res.status(400).json({ success: false, error: 'No caption lines provided.' });
-    }
-
-    let finalMetadata = metadata;
-    if (!finalMetadata.title && finalMetadata.videoId) {
-      try {
-        finalMetadata = await getYouTubeMetadata(finalMetadata.videoId);
-      } catch (metadataErr) {
-        console.error('Failed to fetch metadata on server:', metadataErr.message);
-      }
-    }
-
-    const progressLogs = [];
-    const onProgressUpdate = (step) => {
-      console.log(`[Pipeline Progress] Step: ${step}`);
-      progressLogs.push(step);
-    };
-
-    const ytData = await buildYouTubeDataFromRawItems(items, finalMetadata, sourceLanguage, onProgressUpdate);
-    const translatedLines = await translateLinesToTargetLanguage(ytData.lines, targetLang, onProgressUpdate);
-
-    return res.json({
-      success: true,
-      metadata: ytData.metadata,
-      sourceLanguage: ytData.sourceLanguage,
-      targetLang,
-      lines: translatedLines.map(l => ({ ...l, odiaText: l.translatedText })),
-      progressSteps: progressLogs
-    });
-  } catch (err) {
-    console.error('[API /api/transcribe-lines Error]', err.message);
-    return res.status(500).json({ success: false, error: err.message });
   }
 });
 

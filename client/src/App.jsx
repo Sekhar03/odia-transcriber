@@ -23,11 +23,8 @@ import {
 import confetti from 'canvas-confetti';
 import './index.css';
 import {
-  extractVideoId,
-  extractCaptionsInBrowser,
-  isGoogleAuthConfigured
+  extractVideoId
 } from './youtubeCaptionClient';
-import GoogleSignInButton from './GoogleSignInButton';
 
 const YoutubeIcon = ({ className = "w-6 h-6" }) => (
   <svg className={className} viewBox="0 0 24 24" fill="currentColor">
@@ -88,150 +85,12 @@ export default function App() {
   const [pdfGenerating, setPdfGenerating] = useState(false);
 
   const [copied, setCopied] = useState(false);
-  const [googleAccessToken, setGoogleAccessToken] = useState(null);
-  const [googleUserProfile, setGoogleUserProfile] = useState(null);
-  const [googleConfigured, setGoogleConfigured] = useState(isGoogleAuthConfigured());
   const iframeRef = useRef(null);
-
-  useEffect(() => {
-    const handleConfigChange = () => {
-      setGoogleConfigured(isGoogleAuthConfigured());
-    };
-    window.addEventListener('google-client-id-changed', handleConfigChange);
-    return () => window.removeEventListener('google-client-id-changed', handleConfigChange);
-  }, []);
 
   const isCloudDeploy = typeof window !== 'undefined'
     && window.location.hostname.includes('vercel.app');
 
-  const ensureGoogleAccessToken = async () => {
-    if (googleAccessToken) return googleAccessToken;
-    throw new Error('Please sign in with Google first to fetch YouTube captions on cloud deploy.');
-  };
 
-  const handleGoogleSignedIn = ({ accessToken, profile }) => {
-    setGoogleAccessToken(accessToken);
-    setGoogleUserProfile(profile);
-    setError(null);
-  };
-
-  const handleGoogleSignedOut = () => {
-    setGoogleAccessToken(null);
-    setGoogleUserProfile(null);
-  };
-
-  const fetchCaptionsViaCorsProxy = async (videoId) => {
-    const proxies = [
-      (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-      (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
-    ];
-
-    for (const proxy of proxies) {
-      try {
-        // Step 1: Fetch list of available languages
-        const listUrl = `https://www.youtube.com/api/timedtext?v=${videoId}&type=list`;
-        const proxyListUrl = proxy(listUrl);
-        const listRes = await fetch(proxyListUrl);
-        if (!listRes.ok) continue;
-
-        const listBody = await listRes.text();
-        if (!listBody || listBody.includes('Error') || listBody.includes('Access Denied')) continue;
-
-        // Parse language codes
-        const langCodes = [...listBody.matchAll(/lang_code="([^"]+)"/g)].map(m => m[1]);
-        if (!langCodes.length) continue;
-
-        // Pick priority language
-        const priority = ['or', 'hi', 'en'];
-        let bestLang = langCodes.find(l => priority.includes(l)) 
-          || langCodes.find(l => l.startsWith('en') || l.startsWith('hi'))
-          || langCodes[0];
-
-        // Step 2: Fetch the chosen caption track
-        for (const fmt of ['srv3', 'vtt', 'ttml']) {
-          try {
-            const trackUrl = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=${bestLang}&fmt=${fmt}&caps=asr`;
-            const proxyTrackUrl = proxy(trackUrl);
-            const trackRes = await fetch(proxyTrackUrl, { headers: { 'Accept': 'text/plain,text/vtt,*/*' } });
-            if (trackRes.ok) {
-              const trackBody = await trackRes.text();
-              if (trackBody && trackBody.trim() && !trackBody.includes('Error')) {
-                return { body: trackBody, lang: bestLang };
-              }
-            }
-          } catch (e) {
-            console.warn('Proxy track fetch failed:', e);
-          }
-        }
-      } catch (e) {
-        console.warn('Proxy list fetch failed:', e);
-      }
-    }
-    return null;
-  };
-
-  const transcribeFromBrowserCorsProxy = async (finalUrl, selectedLang, progressTimer) => {
-    const videoId = extractVideoId(finalUrl);
-    if (!videoId) {
-      throw new Error('Invalid YouTube URL.');
-    }
-
-    const fetched = await fetchCaptionsViaCorsProxy(videoId);
-    if (!fetched) {
-      throw new Error('CORS proxies could not fetch captions.');
-    }
-
-    const res = await fetch(`${API_BASE_URL}/api/transcribe-lines`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        rawItems: [],
-        rawBody: fetched.body,
-        sourceLanguage: fetched.lang,
-        targetLang: selectedLang,
-        metadata: { videoId }
-      })
-    });
-
-    const data = await res.json();
-    clearInterval(progressTimer);
-
-    if (!data.success) {
-      throw new Error(data.error || 'Failed to translate captions.');
-    }
-
-    return data;
-  };
-
-  const transcribeFromBrowserCaptions = async (finalUrl, selectedLang, progressTimer) => {
-    const videoId = extractVideoId(finalUrl);
-    if (!videoId) {
-      throw new Error('Invalid YouTube URL. Please paste a valid YouTube video URL.');
-    }
-
-    const accessToken = await ensureGoogleAccessToken();
-    const extracted = await extractCaptionsInBrowser(videoId, accessToken);
-
-    const res = await fetch(`${API_BASE_URL}/api/transcribe-lines`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        rawItems: extracted.rawItems,
-        metadata: extracted.metadata,
-        sourceLanguage: extracted.sourceLanguage,
-        targetLang: selectedLang
-      })
-    });
-
-    const data = await res.json();
-    clearInterval(progressTimer);
-
-    if (!data.success) {
-      throw new Error(data.error || 'Failed to translate extracted captions.');
-    }
-
-    return data;
-  };
 
   const transcribeFromServer = async (finalUrl, selectedLang, progressTimer) => {
     const res = await fetch(`${API_BASE_URL}/api/transcribe`, {
@@ -283,32 +142,9 @@ export default function App() {
       try {
         data = await transcribeFromServer(finalUrl, selectedLang, progressTimer);
       } catch (serverErr) {
-        console.error('Server-side transcription failed:', serverErr);
-        
-        // Try browser-side CORS proxy next (does not require sign-in)
-        progressTimer = simulateProgress();
-        try {
-          data = await transcribeFromBrowserCorsProxy(finalUrl, selectedLang, progressTimer);
-        } catch (corsErr) {
-          console.error('CORS proxy transcription failed:', corsErr);
-          
-          // As a last resort, fall back to Google Sign-In (requires ownership)
-          if (googleConfigured) {
-            progressTimer = simulateProgress();
-            try {
-              data = await transcribeFromBrowserCaptions(finalUrl, selectedLang, progressTimer);
-            } catch (browserErr) {
-              clearInterval(progressTimer);
-              console.error('Browser-side fallback failed:', browserErr);
-              setError(`Transcription failed.\nServer Error: ${serverErr.message}\nCORS Proxy Error: ${corsErr.message}\nBrowser Fallback Error: ${browserErr.message}`);
-              return;
-            }
-          } else {
-            clearInterval(progressTimer);
-            setError(`Transcription failed.\nServer Error: ${serverErr.message}\nCORS Proxy Error: ${corsErr.message}`);
-            return;
-          }
-        }
+        clearInterval(progressTimer);
+        setError(serverErr.message || 'Server transcription failed.');
+        return;
       }
 
       setMetadata(data.metadata);
@@ -476,7 +312,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* Target Language + Google Sign-In */}
+        {/* Target Language */}
         <div className="flex flex-col items-stretch gap-3">
           <div className="flex items-center gap-3 bg-slate-900/80 p-3 rounded-xl border border-slate-700/50">
             <Globe className="w-5 h-5 text-teal-400" />
@@ -502,15 +338,6 @@ export default function App() {
               </div>
             </div>
           </div>
-
-          <GoogleSignInButton
-            accessToken={googleAccessToken}
-            userProfile={googleUserProfile}
-            onSignedIn={handleGoogleSignedIn}
-            onSignedOut={handleGoogleSignedOut}
-            onError={setError}
-            compact
-          />
         </div>
       </header>
 
@@ -578,28 +405,6 @@ export default function App() {
             </button>
           ))}
         </div>
-
-        {isCloudDeploy && (
-          <div className="mt-1 flex flex-col gap-3 rounded-xl border border-amber-500/30 bg-amber-950/20 px-4 py-3 text-xs text-amber-100">
-            <div className="flex items-start gap-2">
-              <Info className="w-4 h-4 mt-0.5 shrink-0 text-amber-300" />
-              <p>
-                Sign in with Google to fetch captions using <strong>your YouTube account</strong> in your browser.
-                {!googleConfigured && ' Click the button below to configure your Google Client ID.'}
-              </p>
-            </div>
-
-            {!googleAccessToken && (
-              <GoogleSignInButton
-                accessToken={googleAccessToken}
-                userProfile={googleUserProfile}
-                onSignedIn={handleGoogleSignedIn}
-                onSignedOut={handleGoogleSignedOut}
-                onError={setError}
-              />
-            )}
-          </div>
-        )}
 
         {/* Processing Pipeline Checklist */}
         {loading && (
