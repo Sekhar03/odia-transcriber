@@ -123,7 +123,7 @@ def train():
         args=training_args,
         train_dataset=split_dataset["train"],
         eval_dataset=split_dataset["test"],
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         data_collator=data_collator,
     )
 
