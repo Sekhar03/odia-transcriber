@@ -85,6 +85,7 @@ export default function App() {
   const [pdfGenerating, setPdfGenerating] = useState(false);
 
   const [copied, setCopied] = useState(false);
+  const [summary, setSummary] = useState(null);
   const iframeRef = useRef(null);
 
   const isCloudDeploy = typeof window !== 'undefined'
@@ -150,6 +151,7 @@ export default function App() {
       setMetadata(data.metadata);
       setSourceLanguage(data.sourceLanguage);
       setLines(data.lines);
+      setSummary(data.summary);
       setPdfTitle(data.metadata.title);
       setCompletedSteps(PIPELINE_STEPS.map(s => s.id));
 
@@ -202,7 +204,8 @@ export default function App() {
           pdfLayout,
           pdfTitle: pdfTitle || metadata.title,
           sourceLanguage,
-          targetLang
+          targetLang,
+          summary
         })
       });
 

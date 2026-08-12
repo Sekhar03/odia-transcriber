@@ -42,6 +42,8 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+const { processContent } = require('./services/aiCleanerService');
+
 // API: Transcribe YouTube Video to Odia or English
 app.post('/api/transcribe', async (req, res) => {
   const debugLogs = [];
@@ -61,8 +63,23 @@ app.post('/api/transcribe', async (req, res) => {
 
     const ytData = await getYouTubeData(url, onProgressUpdate, debugLogs);
     
-    console.log(`[API /api/transcribe] Extracted ${ytData.lines.length} dialogue lines. Translating to ${targetLang}...`);
-    const translatedLines = await translateLinesToTargetLanguage(ytData.lines, targetLang, onProgressUpdate);
+    // Repetition Detection & Summarization
+    console.log(`[API /api/transcribe] Cleaning repetitions and generating summary...`);
+    const { cleanedLines, summary } = await processContent(ytData.lines, targetLang);
+
+    console.log(`[API /api/transcribe] Extracted ${cleanedLines.length} cleaned dialogue lines. Translating to ${targetLang}...`);
+    const translatedLines = await translateLinesToTargetLanguage(cleanedLines, targetLang, onProgressUpdate);
+
+    // Update summary sections with translated lines
+    const translatedSections = (summary.sections || []).map(sec => {
+      return {
+        title: sec.title,
+        lines: sec.lines.map(l => {
+          const match = translatedLines.find(t => t.offset === l.offset);
+          return match ? match : { ...l, odiaText: l.text };
+        })
+      };
+    });
 
     return res.json({
       success: true,
@@ -70,6 +87,10 @@ app.post('/api/transcribe', async (req, res) => {
       sourceLanguage: ytData.sourceLanguage,
       targetLang,
       lines: translatedLines.map(l => ({ ...l, odiaText: l.translatedText })),
+      summary: {
+        ...summary,
+        sections: translatedSections
+      },
       progressSteps: progressLogs
     });
   } catch (err) {
@@ -97,7 +118,7 @@ app.post('/api/translate-text', async (req, res) => {
 // API: Generate & Download PDF (Odia or English)
 app.post('/api/generate-pdf', (req, res) => {
   try {
-    const { metadata = {}, lines = [], pdfLayout = 'dual', pdfTitle = '', sourceLanguage = 'English / Hindi', targetLang = 'or' } = req.body;
+    const { metadata = {}, lines = [], pdfLayout = 'dual', pdfTitle = '', sourceLanguage = 'English / Hindi', targetLang = 'or', summary = {} } = req.body;
     if (!lines || !lines.length) {
       return res.status(400).json({ error: 'No dialogue lines provided for PDF generation.' });
     }
@@ -112,7 +133,27 @@ app.post('/api/generate-pdf', (req, res) => {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`);
 
-    createOdiaPDF({ metadata, lines, pdfLayout, pdfTitle: rawTitle, sourceLanguage, targetLang }, res);
+    // Sync summary sections with potentially edited main lines
+    let finalSummary = summary;
+    if (summary && summary.sections) {
+      finalSummary = {
+        ...summary,
+        sections: summary.sections.map(sec => ({
+          ...sec,
+          lines: sec.lines.map(secLine => {
+            const match = lines.find(l => l.offset === secLine.offset);
+            return match ? match : secLine;
+          })
+        }))
+      };
+    } else {
+      // Create fallback section if summary doesn't exist
+      finalSummary = {
+        sections: [{ title: targetLang === 'or' ? 'ସଂଳାପ ବିବରଣୀ' : 'Dialogue Transcript', lines }]
+      };
+    }
+
+    createOdiaPDF({ metadata, lines, pdfLayout, pdfTitle: rawTitle, sourceLanguage, targetLang, summary: finalSummary }, res);
   } catch (err) {
     console.error('[API /api/generate-pdf Error]', err.message);
     if (!res.headersSent) {
