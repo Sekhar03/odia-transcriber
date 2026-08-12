@@ -21,16 +21,16 @@ def train():
     dataset_path = "dataset/indictrans2_odia_dataset.json" # Local dataset path
     output_dir = "./results_indictrans2"
     
-    print(f"🚀 Initializing QLoRA training for: {model_id}")
-    print(f"📦 Loading dataset from: {dataset_path}")
+    print(f"[Training] Initializing QLoRA training for: {model_id}")
+    print(f"[Data] Loading dataset from: {dataset_path}")
 
     if not os.path.exists(dataset_path):
-        print(f"⚠️ Local dataset not found at {dataset_path}. Please place your JSONL/JSON dataset there.")
+        print(f"[Warning] Local dataset not found at {dataset_path}. Please place your JSONL/JSON dataset there.")
         return
 
     # 2. Check for CUDA / GPU
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Selected compute device: {device.toUpperCase()}")
+    print(f"Selected compute device: {device.upper()}")
 
     # 3. Load Tokenizer and Model
     tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
@@ -64,7 +64,7 @@ def train():
         model.print_trainable_parameters()
     else:
         # Load standard model in full precision on CPU
-        print("⚠️ CUDA GPU not found. Loading model in full precision on CPU...")
+        print("[Warning] CUDA GPU not found. Loading model in full precision on CPU...")
         model = AutoModelForSeq2SeqLM.from_pretrained(
             model_id,
             device_map="cpu",
@@ -128,11 +128,11 @@ def train():
     )
 
     # 8. Start Training
-    print("⏳ Starting training loop...")
+    print("[Progress] Starting training loop...")
     trainer.train()
     
     # Save fine-tuned LoRA weights
-    print(f"🎉 Training complete! Saving adapter weights to {output_dir}")
+    print(f"[Success] Training complete! Saving adapter weights to {output_dir}")
     trainer.model.save_pretrained(output_dir)
 
 if __name__ == "__main__":
