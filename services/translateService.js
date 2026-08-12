@@ -111,8 +111,38 @@ async function translateSingleText(text, targetLang = 'or', srcLang = 'eng_Latn'
       }
     }
   } catch (err) {
-    // Fail silently and fall back to HuggingFace / Google Translate
-    console.log('[Local translation server offline or unreachable. Falling back to online APIs...]');
+    // Fall back silently
+  }
+
+  // 0.5. Try Hugging Face Cloud Inference API (if HF_TOKEN and HF_MODEL_ID are configured in Vercel)
+  const hfToken = process.env.HF_TOKEN;
+  const hfModelId = process.env.HF_MODEL_ID;
+  if (hfToken && hfModelId) {
+    try {
+      const hfRes = await fetch(`https://api-inference.huggingface.co/models/${hfModelId}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${hfToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          inputs: `${targetLang === 'en' ? 'translate Hindi to English' : 'translate English to Odia'}: ${cleanedInput}`
+        })
+      });
+      if (hfRes.ok) {
+        const hfData = await hfRes.json();
+        const translatedText = hfData?.[0]?.generated_text || hfData?.generated_text;
+        if (translatedText) {
+          console.log(`[Hugging Face Cloud Inference Success]: "${cleanedInput}" -> "${translatedText}"`);
+          if (targetLang === 'or') {
+            return sanitizeOdiaForPdf(translatedText);
+          }
+          return cleanAsrArtifacts(translatedText);
+        }
+      }
+    } catch (err) {
+      console.log('[Hugging Face Cloud API offline or error. Trying other online endpoints...]', err.message);
+    }
   }
 
   // 1. Try AI4Bharat IndicTrans2 Model (HuggingFace)
