@@ -134,7 +134,10 @@ function createOdiaPDF(data, stream) {
       }
     });
 
-    // Page Numbers & Dividers Footer
+    // Page Numbers & Dividers Footer (Temporarily set bottom margin to 0 to prevent auto-page breaks)
+    const oldBottomMargin = doc.page.margins.bottom;
+    doc.page.margins.bottom = 0;
+
     const range = doc.bufferedPageRange();
     for (let i = range.start; i < range.start + range.count; i++) {
       doc.switchToPage(i);
@@ -165,6 +168,9 @@ function createOdiaPDF(data, stream) {
         align: 'right'
       });
     }
+
+    // Restore old margin settings
+    doc.page.margins.bottom = oldBottomMargin;
 
     doc.end();
   } catch (err) {
