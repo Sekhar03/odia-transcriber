@@ -104,15 +104,18 @@ function createOdiaPDF(data, stream) {
     const sections = summary.sections || [{ title: isEnglishTarget ? 'Dialogue Content' : 'ସଂଳାପ ବିବରଣୀ', lines }];
 
     // Continuous Monologue Paragraphs Layout (Used for all outputs)
-    sections.forEach((sec) => {
+    sections.forEach((sec, secIdx) => {
       // Merge all lines in this section into a continuous text block
       const mergedText = sec.lines.map(line => {
         return isEnglishTarget
           ? sanitizeAsciiOnly(line.odiaText || line.text || '')
           : sanitizeTextForOdiaPdf(line.odiaText || line.text || '');
-      }).join(' ');
+      }).join(' ').trim();
 
-      if (doc.y > doc.page.height - 100) {
+      if (!mergedText) return;
+
+      // Only add a page if we are transitioning to a new section and the current page is nearly full
+      if (secIdx > 0 && doc.y > doc.page.height - 100) {
         doc.addPage();
         doc.y = 50;
       }
@@ -120,7 +123,11 @@ function createOdiaPDF(data, stream) {
       // Render as a clean, wrapped paragraph
       doc.font(isEnglishTarget ? 'Helvetica' : fontOdiaReg).fontSize(10.5).fillColor(darkTextColor)
          .text(mergedText, { align: 'justify', lineGap: 4 });
-      doc.moveDown(1.2);
+      
+      // Only move down if there is another section following this one
+      if (secIdx < sections.length - 1) {
+        doc.moveDown(1.2);
+      }
     });
 
     // Page Numbers & Dividers Footer
