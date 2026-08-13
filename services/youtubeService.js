@@ -773,18 +773,34 @@ async function getYouTubeMetadata(videoId) {
   let lengthSeconds = 0;
   let thumbnail = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
 
+  // Try official, lightweight oEmbed API first (highly reliable on Vercel & cloud platforms)
   try {
-    const response = await youtubeFetch(pageUrl, YOUTUBE_FETCH_PROFILES[1]);
-    if (response.ok) {
-      const html = await response.text();
-      const titleMatch = html.match(/<meta property="og:title" content="([^"]+)">/);
-      if (titleMatch) title = he.decode(titleMatch[1]);
-
-      const authorMatch = html.match(/<link itemprop="name" content="([^"]+)">/);
-      if (authorMatch) author = he.decode(authorMatch[1]);
+    const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(pageUrl)}&format=json`;
+    const oembedRes = await fetch(oembedUrl);
+    if (oembedRes.ok) {
+      const oembedData = await oembedRes.json();
+      if (oembedData.title) title = oembedData.title;
+      if (oembedData.author_name) author = oembedData.author_name;
     }
-  } catch (e) {
-    console.error('Metadata fetch warning:', e.message);
+  } catch (err) {
+    console.warn('[oEmbed Metadata Fetch Warning]', err.message);
+  }
+
+  // Fallback to page scraping if oEmbed failed or was partial
+  if (title === 'YouTube Video' || author === 'YouTube Channel') {
+    try {
+      const response = await youtubeFetch(pageUrl, YOUTUBE_FETCH_PROFILES[1]);
+      if (response.ok) {
+        const html = await response.text();
+        const titleMatch = html.match(/<meta property="og:title" content="([^"]+)">/);
+        if (titleMatch && title === 'YouTube Video') title = he.decode(titleMatch[1]);
+
+        const authorMatch = html.match(/<link itemprop="name" content="([^"]+)">/);
+        if (authorMatch && author === 'YouTube Channel') author = he.decode(authorMatch[1]);
+      }
+    } catch (e) {
+      console.error('Metadata page fetch warning:', e.message);
+    }
   }
 
   return {
