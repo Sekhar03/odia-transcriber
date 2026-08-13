@@ -48,7 +48,11 @@ function sanitizeTextForOdiaPdf(text) {
   });
 
   str = str.replace(/[\u0900-\u097F]/g, '');
-  str = str.replace(/[\u2000-\u206F\u20A0-\u20CF\uFEFF]/g, '');
+  str = str.replace(/[\u200C\u200D\u200B\u2000-\u206F\u20A0-\u20CF\uFEFF]/g, '');
+
+  // Map Oriya Wa/Va (U+0B71 / U+0B35) to standard Oriya Ba (U+0B2C) for correct Wa-phala conjunct rendering
+  str = str.replace(/[\u0B71\u0B35]/g, '\u0B2C');
+
   str = str.replace(/[^\u0B00-\u0B7F\x20-\x7E]/g, '');
 
   return str.replace(/\s+/g, ' ').trim();
