@@ -87,11 +87,17 @@ function sanitizeOdiaForPdf(text) {
   return str.replace(/\s+/g, ' ').trim();
 }
 
+function hasOdiaCharacters(text) {
+  return /[\u0B00-\u0B7F]/.test(text);
+}
+
 const { translateWithIndicTrans2 } = require('./indicAiService');
 
 async function translateSingleText(text, targetLang = 'or', srcLang = 'eng_Latn', tgtLang = 'ory_Orya') {
   if (!text || !text.trim()) return '';
   const cleanedInput = cleanAsrArtifacts(text);
+
+  const needsOdiaCheck = targetLang === 'or' && /[a-zA-Z]/.test(cleanedInput);
 
   // 0. Try Local Translation Server (T5 fine-tuned model)
   try {
@@ -107,10 +113,11 @@ async function translateSingleText(text, targetLang = 'or', srcLang = 'eng_Latn'
       const localData = await localRes.json();
       if (localData.translatedText) {
         console.log(`[Local Translation Server Success]: "${cleanedInput}" -> "${localData.translatedText}"`);
-        if (targetLang === 'or') {
-          return sanitizeOdiaForPdf(localData.translatedText);
+        const result = targetLang === 'or' ? sanitizeOdiaForPdf(localData.translatedText) : cleanAsrArtifacts(localData.translatedText);
+        if (!needsOdiaCheck || hasOdiaCharacters(result)) {
+          return result;
         }
-        return cleanAsrArtifacts(localData.translatedText);
+        console.log(`[Local Translation Server Bypass]: Result lacked Odia characters. Falling back...`);
       }
     }
   } catch (err) {
@@ -137,10 +144,11 @@ async function translateSingleText(text, targetLang = 'or', srcLang = 'eng_Latn'
         const translatedText = hfData?.[0]?.generated_text || hfData?.generated_text;
         if (translatedText) {
           console.log(`[Hugging Face Cloud Inference Success]: "${cleanedInput}" -> "${translatedText}"`);
-          if (targetLang === 'or') {
-            return sanitizeOdiaForPdf(translatedText);
+          const result = targetLang === 'or' ? sanitizeOdiaForPdf(translatedText) : cleanAsrArtifacts(translatedText);
+          if (!needsOdiaCheck || hasOdiaCharacters(result)) {
+            return result;
           }
-          return cleanAsrArtifacts(translatedText);
+          console.log(`[Hugging Face Cloud Inference Bypass]: Result lacked Odia characters. Falling back...`);
         }
       }
     } catch (err) {
@@ -152,10 +160,11 @@ async function translateSingleText(text, targetLang = 'or', srcLang = 'eng_Latn'
   try {
     const aiTranslated = await translateWithIndicTrans2(cleanedInput, srcLang, tgtLang);
     if (aiTranslated && aiTranslated.trim()) {
-      if (targetLang === 'or') {
-        return sanitizeOdiaForPdf(aiTranslated);
+      const result = targetLang === 'or' ? sanitizeOdiaForPdf(aiTranslated) : cleanAsrArtifacts(aiTranslated);
+      if (!needsOdiaCheck || hasOdiaCharacters(result)) {
+        return result;
       }
-      return cleanAsrArtifacts(aiTranslated);
+      console.log(`[IndicTrans2 Bypass]: Result lacked Odia characters. Falling back...`);
     }
   } catch (err) {
     console.warn('[IndicTrans2 translation failed, falling back to Google Translate]:', err.message);
@@ -186,6 +195,90 @@ async function translateSingleText(text, targetLang = 'or', srcLang = 'eng_Latn'
 
     if (data && data[0]) {
       translatedText = data[0].map(item => item[0]).filter(Boolean).join('');
+    }
+
+    // Google Translate retry with explicit English source if it fails to produce Odia characters
+    if (needsOdiaCheck && !hasOdiaCharacters(translatedText)) {
+      console.log(`[Google Translate Bypass]: sl=auto returned no Odia for "${cleanedInput}". Retrying with sl=en...`);
+      try {
+        const urlEn = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=or&dt=t`;
+        const resEn = await fetch(urlEn, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+          },
+          body: 'q=' + encodeURIComponent(cleanedInput)
+        });
+        if (resEn.ok) {
+          const dataEn = await resEn.json();
+          if (dataEn && dataEn[0]) {
+            const candidate = dataEn[0].map(item => item[0]).filter(Boolean).join('');
+            if (hasOdiaCharacters(candidate)) {
+              translatedText = candidate;
+            }
+          }
+        }
+      } catch (errEn) {
+        // ignore
+      }
+    }
+
+    // Try MyMemory translation API if still no Odia characters
+    if (needsOdiaCheck && !hasOdiaCharacters(translatedText)) {
+      console.log(`[MyMemory Fallback]: Retrying translation for "${cleanedInput}" via MyMemory API...`);
+      try {
+        const myMemoryUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(cleanedInput)}&langpair=en|or`;
+        const myMemoryRes = await fetch(myMemoryUrl);
+        if (myMemoryRes.ok) {
+          const myMemoryData = await myMemoryRes.json();
+          const candidate = myMemoryData?.responseData?.translatedText;
+          if (candidate && hasOdiaCharacters(candidate)) {
+            translatedText = candidate;
+          }
+        }
+      } catch (errMyMemory) {
+        // ignore
+      }
+    }
+
+    // Failsafe: Try translating by splitting sentence into smaller chunks/clauses
+    if (needsOdiaCheck && !hasOdiaCharacters(translatedText)) {
+      console.log(`[Splitting Fallback]: Translating sentence by splitting into clauses: "${cleanedInput}"`);
+      try {
+        const parts = cleanedInput.split(/([,.;!?]|\band\b)/gi);
+        const translatedParts = await Promise.all(parts.map(async (part) => {
+          if (/^([,.;!?]|\band\b|\s+)$/i.test(part)) return part;
+          if (!/[a-zA-Z]/.test(part)) return part;
+          try {
+            const urlEn = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=or&dt=t`;
+            const resEn = await fetch(urlEn, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+              },
+              body: 'q=' + encodeURIComponent(part)
+            });
+            if (resEn.ok) {
+              const dataEn = await resEn.json();
+              if (dataEn && dataEn[0]) {
+                const candidate = dataEn[0].map(item => item[0]).filter(Boolean).join('');
+                if (hasOdiaCharacters(candidate)) {
+                  return candidate;
+                }
+              }
+            }
+          } catch (e) {}
+          return part;
+        }));
+        const candidate = translatedParts.join('');
+        if (hasOdiaCharacters(candidate)) {
+          translatedText = candidate;
+        }
+      } catch (errSplit) {
+        // ignore
+      }
     }
 
     if (targetLang === 'or') {
@@ -232,15 +325,25 @@ async function translateLinesToTargetLanguage(lines, targetLang = 'or', onProgre
         const translatedStr = await translateSingleText(promptText, targetLang, srcLang, tgtLang);
         const parts = translatedStr.split(/\[\[\d+\]\]/);
 
-        return batch.map((l, idx) => {
+        return Promise.all(batch.map(async (l, idx) => {
           const part = (parts[idx + 1] && parts[idx + 1].trim()) ? parts[idx + 1].trim() : l.text;
-          const finalOdia = targetLang === 'or' ? sanitizeOdiaForPdf(part) : cleanAsrArtifacts(part);
+          let finalOdia = targetLang === 'or' ? sanitizeOdiaForPdf(part) : cleanAsrArtifacts(part);
+
+          // Checker check: if target is Odia, source has letters, but final output has no Odia characters
+          if (targetLang === 'or' && /[a-zA-Z]/.test(l.text) && !hasOdiaCharacters(finalOdia)) {
+            console.log(`[Batch Checker Retry]: Line "${l.text}" did not translate to Odia. Retrying line individually...`);
+            const retried = await translateSingleText(l.text, targetLang, srcLang, tgtLang);
+            if (hasOdiaCharacters(retried)) {
+              finalOdia = retried;
+            }
+          }
+
           return {
             ...l,
             text: cleanAsrArtifacts(l.text),
             translatedText: finalOdia || l.text
           };
-        });
+        }));
       } catch (e) {
         return batch.map(l => ({
           ...l,
