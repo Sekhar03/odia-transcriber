@@ -1,0 +1,11 @@
+# Force Git to treat font files and other assets as binary to prevent line ending corruption
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
