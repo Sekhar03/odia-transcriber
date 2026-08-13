@@ -153,3 +153,22 @@ For more details, check `VERCEL_DEPLOYMENT_GUIDE.md`.
 - **Frontend**: React (v19), Vite, Tailwind CSS, Lucide Icons, Canvas Confetti.
 - **Backend**: Express, CORS, PDFKit (for low-level custom PDF layout stream), YouTubei.js (InnerTube wrapper).
 - **Translation & NLP**: AI4Bharat IndicTrans2 Model, Hugging Face Inference APIs, fallback server translators.
+
+---
+
+## 🤖 Trained Translation Model
+
+The project includes a custom fine-tuned translation model for English-Odia and Hindi-Odia tasks:
+* **Base Architecture**: `t5-small` (Seq2Seq Transformer).
+* **Dataset**: Custom dataset located at `dataset/indictrans2_odia_dataset.json`.
+* **Training Setup**: Configured with Hugging Face Transformers, QLoRA (4-bit quantization), and PEFT adapters, allowing efficient execution and local CPU or GPU fine-tuning.
+* **Scripts**:
+  * Training: [`scripts/train_model.py`](file:///c:/Users/sekha/Downloads/transacribe%20odia/scripts/train_model.py)
+  * Server: [`scripts/local_translation_server.py`](file:///c:/Users/sekha/Downloads/transacribe%20odia/scripts/local_translation_server.py) loads the model weights saved in `./results_translation` to host a local translation microservice on port `5002`.
+
+---
+
+## 📄 License
+
+This project is licensed under the [MIT License](file:///c:/Users/sekha/Downloads/transacribe%20odia/LICENSE) - see the [LICENSE](file:///c:/Users/sekha/Downloads/transacribe%20odia/LICENSE) file for details.
+
