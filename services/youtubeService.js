@@ -1,5 +1,6 @@
 const { YoutubeTranscript } = require('youtube-transcript');
 const he = require('he');
+const https = require('https');
 
 const INNERTUBE_API_KEY = process.env.INNERTUBE_API_KEY || 'AIzaSyAO_FJ2Slv5QZ0_A9-x_M4_J8-M';
 const FETCH_TIMEOUT_MS = 12000;
@@ -911,10 +912,72 @@ async function fetchViaYoutubeTranscriptAI(videoId, debugLogs = []) {
   return null;
 }
 
+async function resolveSearchQueryToVideoId(url, debugLogs = []) {
+  try {
+    let query = '';
+    const matchQuery = url.match(/[?&]search_query=([^&]+)/);
+    if (matchQuery) {
+      query = decodeURIComponent(matchQuery[1].replace(/\+/g, ' '));
+    } else if (!url.includes('://') && url.trim().length > 0) {
+      query = url.trim();
+    } else {
+      return null;
+    }
+
+    debugLogs.push(`[Search Resolver] Searching YouTube for query: "${query}"`);
+
+    const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+    
+    const html = await new Promise((resolve, reject) => {
+      const options = {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
+          'Accept-Language': 'en-US,en;q=0.9'
+        },
+        timeout: 8000
+      };
+      
+      const req = https.get(searchUrl, options, (res) => {
+        if (res.statusCode !== 200) {
+          reject(new Error(`HTTP status code ${res.statusCode}`));
+          return;
+        }
+        let body = '';
+        res.on('data', chunk => body += chunk);
+        res.on('end', () => resolve(body));
+      });
+      
+      req.on('error', reject);
+      req.on('timeout', () => {
+        req.destroy();
+        reject(new Error('Request timeout'));
+      });
+    });
+
+    // Find all videoId occurrences
+    const matches = [...html.matchAll(/"videoId":"([a-zA-Z0-9_-]{11})"/g)].map(m => m[1]);
+    const uniqueIds = [...new Set(matches)];
+    
+    debugLogs.push(`[Search Resolver] Found ${uniqueIds.length} candidate video IDs.`);
+    
+    if (uniqueIds.length > 0) {
+      debugLogs.push(`[Search Resolver] Mapped query to top video ID: ${uniqueIds[0]}`);
+      return uniqueIds[0];
+    }
+  } catch (e) {
+    debugLogs.push(`[Search Resolver Failed]: ${e.message}`);
+  }
+  return null;
+}
+
 async function getYouTubeData(url, onProgressUpdate, debugLogs = []) {
-  const videoId = extractVideoId(url);
+  let videoId = extractVideoId(url);
   if (!videoId) {
-    throw new Error('Invalid YouTube URL. Please paste a valid YouTube video URL (e.g. https://www.youtube.com/watch?v=...)');
+    videoId = await resolveSearchQueryToVideoId(url, debugLogs);
+  }
+
+  if (!videoId) {
+    throw new Error('Invalid YouTube URL or Query. Please paste a valid YouTube video URL or search query (e.g. "Odia podcast").');
   }
 
   debugLogs.push(`[getYouTubeData] videoId=${videoId}`);
