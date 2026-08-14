@@ -129,19 +129,34 @@ async function translateSingleText(text, targetLang = 'or', srcLang = 'eng_Latn'
   const hfModelId = process.env.HF_MODEL_ID;
   if (hfToken && hfModelId) {
     try {
+      const isNllb = hfModelId.toLowerCase().includes('nllb');
+      let payload;
+      
+      if (isNllb) {
+        payload = {
+          inputs: cleanedInput,
+          parameters: {
+            src_lang: srcLang || 'eng_Latn',
+            tgt_lang: tgtLang || 'ory_Orya'
+          }
+        };
+      } else {
+        payload = {
+          inputs: `${targetLang === 'en' ? 'translate Hindi to English' : 'translate English to Odia'}: ${cleanedInput}`
+        };
+      }
+
       const hfRes = await fetch(`https://api-inference.huggingface.co/models/${hfModelId}`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${hfToken}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          inputs: `${targetLang === 'en' ? 'translate Hindi to English' : 'translate English to Odia'}: ${cleanedInput}`
-        })
+        body: JSON.stringify(payload)
       });
       if (hfRes.ok) {
         const hfData = await hfRes.json();
-        const translatedText = hfData?.[0]?.generated_text || hfData?.generated_text;
+        const translatedText = hfData?.[0]?.generated_text || hfData?.[0]?.translation_text || hfData?.generated_text || hfData?.translation_text;
         if (translatedText) {
           console.log(`[Hugging Face Cloud Inference Success]: "${cleanedInput}" -> "${translatedText}"`);
           const result = targetLang === 'or' ? sanitizeOdiaForPdf(translatedText) : cleanAsrArtifacts(translatedText);
