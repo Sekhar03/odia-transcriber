@@ -545,50 +545,79 @@ async function fetchViaYoutubeiJS(videoId, debugLogs = []) {
           retrieve_player: false,
           generate_session_locally: true
         });
+        let captionTracks = [];
+        let title = '';
+        let author = '';
+        let lengthSeconds = 0;
+        let info = null;
 
-        const info = await innertube.getInfo(videoId);
-        const captionTracks = info.captions?.caption_tracks;
+        try {
+          const playerRes = await innertube.actions.execute('/player', { videoId, client: clientType });
+          captionTracks = playerRes.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+          title = playerRes.videoDetails?.title || '';
+          author = playerRes.videoDetails?.author || '';
+          lengthSeconds = parseInt(playerRes.videoDetails?.lengthSeconds || '0');
+        } catch (playerErr) {
+          debugLogs.push(`[youtubei.js] Direct player actions failed: ${playerErr.message}. Trying getInfo fallback...`);
+          info = await innertube.getInfo(videoId);
+          captionTracks = info.captions?.caption_tracks;
+          title = info.basic_info?.title || '';
+          author = info.basic_info?.author || '';
+          lengthSeconds = info.basic_info?.duration || 0;
+        }
+
         debugLogs.push(`[youtubei.js] ${clientType} caption tracks=${captionTracks?.length || 0}`);
 
         if (captionTracks?.length) {
-          const sortedTracks = sortCaptionTracks(captionTracks, track => track.language_code);
+          const sortedTracks = sortCaptionTracks(captionTracks, track => track.language_code || track.languageCode);
 
           for (const track of sortedTracks) {
-            if (!track.base_url) continue;
+            const baseUrl = track.base_url || track.baseUrl;
+            if (!baseUrl) continue;
 
-            const body = await fetchCaptionTrackBody(track.base_url, YOUTUBE_FETCH_PROFILES[0]);
-            const parsed = parseUniversalCaptions(body, track.language_code);
+            const body = await fetchCaptionTrackBody(baseUrl, YOUTUBE_FETCH_PROFILES[0]);
+            const parsed = parseUniversalCaptions(body, track.language_code || track.languageCode);
             if (parsed?.length) {
               debugLogs.push(`[youtubei.js] SUCCESS ${parsed.length} captions via base_url`);
               return {
                 rawItems: parsed,
-                title: info.basic_info?.title || '',
-                author: info.basic_info?.author || '',
-                lengthSeconds: info.basic_info?.duration || 0
+                title: title,
+                author: author,
+                lengthSeconds: lengthSeconds
               };
             }
           }
         }
 
-        try {
-          const transcript = await info.getTranscript();
-          const segments = transcript?.transcript?.content?.body?.initial_segments
-            || transcript?.content?.body?.initial_segments
-            || transcript?.segments
-            || [];
-          const rawItems = transcriptSegmentsToRawItems(segments, 'en');
-
-          if (rawItems.length) {
-            debugLogs.push(`[youtubei.js] SUCCESS ${rawItems.length} captions via getTranscript`);
-            return {
-              rawItems,
-              title: info.basic_info?.title || '',
-              author: info.basic_info?.author || '',
-              lengthSeconds: info.basic_info?.duration || 0
-            };
+        if (!info) {
+          try {
+            info = await innertube.getInfo(videoId);
+          } catch (e) {
+            // ignore
           }
-        } catch (e) {
-          debugLogs.push(`[youtubei.js] ${clientType} getTranscript failed: ${e.message}`);
+        }
+
+        if (info) {
+          try {
+            const transcript = await info.getTranscript();
+            const segments = transcript?.transcript?.content?.body?.initial_segments
+              || transcript?.content?.body?.initial_segments
+              || transcript?.segments
+              || [];
+            const rawItems = transcriptSegmentsToRawItems(segments, 'en');
+
+            if (rawItems.length) {
+              debugLogs.push(`[youtubei.js] SUCCESS ${rawItems.length} captions via getTranscript`);
+              return {
+                rawItems,
+                title: info.basic_info?.title || '',
+                author: info.basic_info?.author || '',
+                lengthSeconds: info.basic_info?.duration || 0
+              };
+            }
+          } catch (transcriptErr) {
+            // ignore
+          }
         }
       } catch (e) {
         debugLogs.push(`[youtubei.js] ${clientType} failed: ${e.message}`);
