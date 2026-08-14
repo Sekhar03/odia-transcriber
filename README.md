@@ -156,6 +156,30 @@ For more details, check `VERCEL_DEPLOYMENT_GUIDE.md`.
 
 ---
 
+## 🔌 API Integrations & Credits
+
+This project relies on and credits the following API integrations to deliver high-quality Odia transcriptions:
+
+* **Google Gemini API** (`gemini-2.5-flash`):
+  * **Role:** Intelligent transcript cleanup, structure organizing, and summary generation.
+  * **Function:** Identifies transcription filler words/repetitive lines, groups the timeline into logical chapters, and generates bilingual summaries (Overview, Key Points, and Takeaways).
+* **Hugging Face Inference API**:
+  * **Role:** Hosts state-of-the-art multilingual machine translation and ASR models.
+  * **Models Credited:**
+    * **AI4Bharat IndicTrans2 (1B)** (`ai4bharat/indictrans2-en-indic-1B` & `ai4bharat/indictrans2-indic-indic-1B`) for translation between English, Hindi, and Odia.
+    * **AI4Bharat IndicConformer** (`ai4bharat/indic-conformer-600m-multilingual`) for Speech-to-Text translation.
+* **YouTube InnerTube API**:
+  * **Role:** YouTube metadata retrieval & caption extraction.
+  * **Function:** Queries YouTube's internal player endpoints (`/youtubei/v1/player`) using Android, iOS, and Web client configurations to fetch native video caption tracks.
+* **Invidious API**:
+  * **Role:** Decentralized YouTube scraping proxy.
+  * **Function:** Leverages public Invidious instances (e.g., `inv.nadeko.net`) as automatic fallback endpoints to fetch video transcripts if YouTube restricts direct connections.
+* **Local Translation Server API**:
+  * **Role:** Offline translation microservice.
+  * **Function:** Uses a locally running translation server (`http://localhost:5002/translate`) connected to a custom fine-tuned T5 Seq2Seq model.
+
+---
+
 ## 🤖 Trained Translation Model
 
 The project includes a custom fine-tuned translation model for English-Odia and Hindi-Odia tasks:
