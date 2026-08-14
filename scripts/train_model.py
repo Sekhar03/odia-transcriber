@@ -75,6 +75,12 @@ def train():
     # Expects JSON format: [{"source": "...", "target": "..."}]
     dataset = load_dataset("json", data_files=dataset_path)
     
+    # CPU Safety Limit: set cpu_limit to False to train the full dataset on CPU
+    cpu_limit = False 
+    if device == "cpu" and cpu_limit:
+        print("[CPU Mode] cpu_limit is enabled. Limiting dataset to 200 samples to ensure fast execution. Set 'cpu_limit = False' in train_model.py for full training.")
+        dataset["train"] = dataset["train"].select(range(min(200, len(dataset["train"]))))
+
     def preprocess_function(examples):
         inputs = [ex for ex in examples["source"]]
         targets = [ex for ex in examples["target"]]
