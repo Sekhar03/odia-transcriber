@@ -62,6 +62,21 @@ const PIPELINE_STEPS = [
   { id: 'pdf_generated', label: 'PDF ready' }
 ];
 
+const LANG_NAMES = {
+  or: 'Odia',
+  en: 'English',
+  hi: 'Hindi',
+  bn: 'Bengali',
+  te: 'Telugu',
+  ta: 'Tamil',
+  mr: 'Marathi',
+  es: 'Spanish',
+  fr: 'French',
+  gu: 'Gujarati',
+  kn: 'Kannada',
+  pa: 'Punjabi'
+};
+
 export default function App() {
   const [url, setUrl] = useState('');
   const [targetLang, setTargetLang] = useState('or'); // 'or' | 'en'
@@ -320,25 +335,25 @@ export default function App() {
           <div className="flex items-center gap-3 bg-slate-900/80 p-3 rounded-xl border border-slate-700/50">
             <Globe className="w-5 h-5 text-teal-400" />
             <div className="text-xs">
-              <span className="text-slate-400 block mb-1">Target Language:</span>
-              <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
-                <button
-                  onClick={() => setTargetLang('or')}
-                  className={`px-2.5 py-1 rounded text-xs font-bold transition ${
-                    targetLang === 'or' ? 'bg-teal-600 text-white' : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  ଓଡ଼ିଆ (Odia)
-                </button>
-                <button
-                  onClick={() => setTargetLang('en')}
-                  className={`px-2.5 py-1 rounded text-xs font-bold transition ${
-                    targetLang === 'en' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  English
-                </button>
-              </div>
+              <span className="text-slate-400 block mb-1.5">Target Language:</span>
+              <select
+                value={targetLang}
+                onChange={(e) => setTargetLang(e.target.value)}
+                className="bg-slate-950 text-slate-200 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-800 focus:outline-none focus:border-teal-500 cursor-pointer"
+              >
+                <option value="or">ଓଡ଼ିଆ (Odia)</option>
+                <option value="en">English</option>
+                <option value="hi">हिन्दी (Hindi)</option>
+                <option value="bn">বাংলা (Bengali)</option>
+                <option value="te">తెలుగు (Telugu)</option>
+                <option value="ta">தமிழ் (Tamil)</option>
+                <option value="mr">मराठी (Marathi)</option>
+                <option value="es">Español (Spanish)</option>
+                <option value="fr">Français (French)</option>
+                <option value="gu">ગુજરાતી (Gujarati)</option>
+                <option value="kn">ಕನ್ನಡ (Kannada)</option>
+                <option value="pa">ਪੰਜਾਬੀ (Punjabi)</option>
+              </select>
             </div>
           </div>
         </div>
@@ -384,7 +399,7 @@ export default function App() {
             ) : (
               <>
                 <Sparkles className="w-5 h-5" />
-                <span>Transcribe ({targetLang === 'or' ? 'Odia' : 'English'})</span>
+                <span>Transcribe ({LANG_NAMES[targetLang] || 'Odia'})</span>
               </>
             )}
           </button>
@@ -415,7 +430,7 @@ export default function App() {
             <div className="flex items-center justify-between">
               <h4 className="text-sm font-bold text-teal-300 flex items-center gap-2">
                 <RefreshCw className="w-4 h-4 animate-spin text-teal-400" />
-                Processing Pipeline ({targetLang === 'or' ? 'Odia Target' : 'English Target'}):
+                Processing Pipeline ({LANG_NAMES[targetLang] || 'Odia'} Target):
               </h4>
               <span className="text-xs font-mono text-teal-400 bg-teal-950/80 px-2.5 py-1 rounded border border-teal-800">
                 Parallel AI Engine Active
@@ -521,10 +536,10 @@ export default function App() {
                 <div>
                   <h3 className="text-xl font-bold text-white flex items-center gap-2">
                     <FileText className="w-5 h-5 text-teal-400" />
-                    <span>{targetLang === 'or' ? 'Odia Transcript' : 'English Transcript'}</span>
+                    <span>{(LANG_NAMES[targetLang] || 'Odia') + ' Transcript'}</span>
                   </h3>
                   <p className="text-xs text-slate-400 mt-0.5 odia-text">
-                    {targetLang === 'or' ? 'ଓଡ଼ିଆ ସଂଳାପ | 100% Non-Summarized' : 'English Dialogue | 100% Non-Summarized'}
+                    {targetLang === 'or' ? 'ଓଡ଼ିଆ ସଂଳାପ | 100% Non-Summarized' : (LANG_NAMES[targetLang] || 'Odia') + ' Dialogue | 100% Non-Summarized'}
                   </p>
                 </div>
 
@@ -544,7 +559,7 @@ export default function App() {
                       viewMode === 'odia_only' ? 'bg-teal-600 text-white shadow' : 'text-slate-400 hover:text-white'
                     }`}
                   >
-                    {targetLang === 'or' ? 'Odia Only' : 'English Only'}
+                    {(LANG_NAMES[targetLang] || 'Odia') + ' Only'}
                   </button>
                   <button
                     onClick={() => setViewMode('monologue')}
@@ -734,7 +749,7 @@ export default function App() {
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
                 <Download className="w-5 h-5 text-teal-400" />
-                <span>PDF Download Settings ({targetLang === 'or' ? 'Odia' : 'English'})</span>
+                <span>PDF Download Settings ({LANG_NAMES[targetLang] || 'Odia'})</span>
               </h3>
               <button
                 onClick={() => setIsPdfModalOpen(false)}
@@ -775,10 +790,10 @@ export default function App() {
               <div className="bg-slate-900/60 p-3 rounded-lg border border-slate-800 text-xs text-slate-400">
                 <p className="flex items-center gap-1.5 font-semibold text-teal-300 mb-1">
                   <Check className="w-4 h-4" />
-                  {targetLang === 'or' ? 'Noto Sans Oriya Font Embedded' : 'Standard Helvetica PDF Engine'}
+                  {targetLang === 'or' ? 'Noto Sans Oriya Font Embedded' : `Standard ${LANG_NAMES[targetLang] || 'Odia'} PDF Engine`}
                 </p>
                 <p className="odia-text text-[11px]">
-                  {targetLang === 'or' ? 'ସମସ୍ତ ଓଡ଼ିଆ ଅକ୍ଷର (ଓଡ଼ିଆ Script) PDF ରେ ସୁନ୍ଦର ଭାବେ ପ୍ରିଣ୍ଟ ହେବ।' : 'Clean formatted English PDF with timestamps and speakers.'}
+                  {targetLang === 'or' ? 'ସମସ୍ତ ଓଡ଼ିଆ ଅକ୍ଷର (ଓଡ଼ିଆ Script) PDF ରେ ସୁନ୍ଦର ଭାବେ ପ୍ରିଣ୍ଟ ହେବ।' : `Clean formatted ${LANG_NAMES[targetLang] || 'Odia'} PDF with timestamps and speakers.`}
                 </p>
               </div>
             </div>

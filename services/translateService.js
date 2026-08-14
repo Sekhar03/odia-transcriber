@@ -22,6 +22,21 @@ const HINDI_TO_ODIA_MAP = {
   'बिहार': 'ବିହାର'
 };
 
+const NLLB_LANG_MAP = {
+  'or': 'ory_Orya',
+  'en': 'eng_Latn',
+  'hi': 'hin_Deva',
+  'bn': 'ben_Beng',
+  'te': 'tel_Telu',
+  'ta': 'tam_Taml',
+  'mr': 'mar_Deva',
+  'es': 'spa_Latn',
+  'fr': 'fra_Latn',
+  'gu': 'guj_Gujr',
+  'kn': 'kan_Knda',
+  'pa': 'pan_Guru'
+};
+
 function cleanAsrArtifacts(text) {
   if (!text) return '';
   let cleaned = text.replace(/\b(\w+)\s+\1\b/gi, '$1');
@@ -98,30 +113,33 @@ async function translateSingleText(text, targetLang = 'or', srcLang = 'eng_Latn'
   const cleanedInput = cleanAsrArtifacts(text);
 
   const needsOdiaCheck = targetLang === 'or' && /[a-zA-Z]/.test(cleanedInput);
+  const finalTgtLang = NLLB_LANG_MAP[targetLang] || tgtLang;
 
-  // 0. Try Local Translation Server (T5 fine-tuned model)
-  try {
-    const localRes = await fetch('http://localhost:5002/translate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        text: cleanedInput,
-        task: targetLang === 'en' ? 'translate Hindi to English' : 'translate English to Odia'
-      })
-    });
-    if (localRes.ok) {
-      const localData = await localRes.json();
-      if (localData.translatedText) {
-        console.log(`[Local Translation Server Success]: "${cleanedInput}" -> "${localData.translatedText}"`);
-        const result = targetLang === 'or' ? sanitizeOdiaForPdf(localData.translatedText) : cleanAsrArtifacts(localData.translatedText);
-        if (!needsOdiaCheck || hasOdiaCharacters(result)) {
-          return result;
+  // 0. Try Local Translation Server (T5 fine-tuned model) - only for Odia & English
+  if (targetLang === 'or' || targetLang === 'en') {
+    try {
+      const localRes = await fetch('http://localhost:5002/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: cleanedInput,
+          task: targetLang === 'en' ? 'translate Hindi to English' : 'translate English to Odia'
+        })
+      });
+      if (localRes.ok) {
+        const localData = await localRes.json();
+        if (localData.translatedText) {
+          console.log(`[Local Translation Server Success]: "${cleanedInput}" -> "${localData.translatedText}"`);
+          const result = targetLang === 'or' ? sanitizeOdiaForPdf(localData.translatedText) : cleanAsrArtifacts(localData.translatedText);
+          if (!needsOdiaCheck || hasOdiaCharacters(result)) {
+            return result;
+          }
+          console.log(`[Local Translation Server Bypass]: Result lacked Odia characters. Falling back...`);
         }
-        console.log(`[Local Translation Server Bypass]: Result lacked Odia characters. Falling back...`);
       }
+    } catch (err) {
+      // Fall back silently
     }
-  } catch (err) {
-    // Fall back silently
   }
 
   // 0.5. Try Hugging Face Cloud Inference API (if HF_TOKEN and HF_MODEL_ID are configured in Vercel)
@@ -137,7 +155,7 @@ async function translateSingleText(text, targetLang = 'or', srcLang = 'eng_Latn'
           inputs: cleanedInput,
           parameters: {
             src_lang: srcLang || 'eng_Latn',
-            tgt_lang: tgtLang || 'ory_Orya'
+            tgt_lang: finalTgtLang
           }
         };
       } else {
@@ -319,7 +337,10 @@ async function translateSingleText(text, targetLang = 'or', srcLang = 'eng_Latn'
 async function translateLinesToTargetLanguage(lines, targetLang = 'or', onProgressUpdate) {
   if (!lines || lines.length === 0) return [];
 
-  if (onProgressUpdate) onProgressUpdate(targetLang === 'en' ? 'converting_to_english' : 'converting_to_odia');
+  if (onProgressUpdate) {
+    const progressLabel = targetLang === 'en' ? 'converting_to_english' : `converting_to_${targetLang}`;
+    onProgressUpdate(progressLabel);
+  }
 
   const batchSize = 15;
   const batches = [];
@@ -335,28 +356,28 @@ async function translateLinesToTargetLanguage(lines, targetLang = 'or', onProgre
         // Auto-detect source script for model selection
         const hasHindi = /[\u0900-\u097F]/.test(promptText);
         const srcLang = hasHindi ? 'hin_Deva' : 'eng_Latn';
-        const tgtLang = targetLang === 'en' ? 'eng_Latn' : 'ory_Orya';
+        const tgtLang = NLLB_LANG_MAP[targetLang] || 'ory_Orya';
 
         const translatedStr = await translateSingleText(promptText, targetLang, srcLang, tgtLang);
         const parts = translatedStr.split(/\[\[\d+\]\]/);
 
         return Promise.all(batch.map(async (l, idx) => {
           const part = (parts[idx + 1] && parts[idx + 1].trim()) ? parts[idx + 1].trim() : l.text;
-          let finalOdia = targetLang === 'or' ? sanitizeOdiaForPdf(part) : cleanAsrArtifacts(part);
+          let finalTranslated = targetLang === 'or' ? sanitizeOdiaForPdf(part) : cleanAsrArtifacts(part);
 
           // Checker check: if target is Odia, source has letters, but final output has no Odia characters
-          if (targetLang === 'or' && /[a-zA-Z]/.test(l.text) && !hasOdiaCharacters(finalOdia)) {
+          if (targetLang === 'or' && /[a-zA-Z]/.test(l.text) && !hasOdiaCharacters(finalTranslated)) {
             console.log(`[Batch Checker Retry]: Line "${l.text}" did not translate to Odia. Retrying line individually...`);
             const retried = await translateSingleText(l.text, targetLang, srcLang, tgtLang);
             if (hasOdiaCharacters(retried)) {
-              finalOdia = retried;
+              finalTranslated = retried;
             }
           }
 
           return {
             ...l,
             text: cleanAsrArtifacts(l.text),
-            translatedText: finalOdia || l.text
+            translatedText: finalTranslated || l.text
           };
         }));
       } catch (e) {
