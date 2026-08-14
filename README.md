@@ -1,8 +1,18 @@
 # OdiaTube AI Transcriber 🎙️ → 📄 (ଓଡ଼ିଆ PDF)
 
-An advanced AI-powered web application that transcribes YouTube videos (English, Hindi, and Hinglish/mixed dialogue) into complete, non-summarized natural Odia dialogue (ଓଡ଼ିଆ) and generates beautifully formatted PDF documents. 
+[![Odia Transcriber](https://img.shields.io/badge/Language-Odia%20%2F%20ଓଡ଼ିଆ-blue.svg)](#)
+[![Speech to Text](https://img.shields.io/badge/Task-Speech%20to%20Text-orange.svg)](#)
+[![Translation](https://img.shields.io/badge/Translation-English%20%2F%20Hindi%20%E2%86%92%20Odia-brightgreen.svg)](#)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Framework](https://img.shields.io/badge/Framework-React%20%2F%20Express-lightblue.svg)](#)
+
+An advanced, production-grade AI-powered **Odia Transcriber** web application that transcribes YouTube videos (English, Hindi, and Hinglish/mixed dialogue) into complete, non-summarized natural Odia dialogue (ଓଡ଼ିଆ) and generates beautifully formatted PDF documents. 
 
 The project solves the common issue of broken glyphs/boxes (`□`) in Odia text rendering by utilizing fully embedded **Noto Sans Oriya** fonts inside generated PDFs.
+
+### 🏷️ GitHub Repository Topics (Recommended settings for GitHub SEO)
+To maximize discoverability, make sure to add these topics to your GitHub repository settings:
+`odia-transcriber`, `youtube-transcription`, `odia-speech-to-text`, `odia-translation`, `indictrans2-odia`, `youtube-to-odia-pdf`, `odia-pdf-generator`, `huggingface-nllb-odia`, `speech-to-text-odia`, `odia-ai-translator`.
 
 ---
 
