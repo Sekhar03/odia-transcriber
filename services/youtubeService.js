@@ -534,7 +534,10 @@ async function fetchViaInnerTube(videoId, debugLogs = []) {
 async function fetchViaYoutubeiJS(videoId, debugLogs = []) {
   try {
     debugLogs.push('[youtubei.js] Initializing Innertube...');
-    const { Innertube, ClientType } = await import('youtubei.js');
+    const { Innertube, ClientType, Log } = await import('youtubei.js');
+    try {
+      Log.setLevel(Log.Level.NONE);
+    } catch (e) {}
     const clientTypes = [ClientType.ANDROID, ClientType.TV_EMBEDDED, ClientType.IOS];
 
     for (const clientType of clientTypes) {
