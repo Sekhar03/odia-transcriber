@@ -25,4 +25,6 @@ Thumbs.db
 # Python portable and training outputs
 python_portable/
 results_translation/checkpoint-*/
+results_nllb/checkpoint-*/
+results_nllb/*.safetensors
 dataset/*.jsonl
