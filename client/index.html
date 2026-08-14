@@ -5,11 +5,16 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     
+    <!-- Prefetch / Preconnect DNS Optimizations -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://accounts.google.com" />
+
     <!-- Primary SEO Meta Tags -->
     <title>OdiaTube AI Transcriber | YouTube Video to Odia & English Transcript & PDF</title>
     <meta name="title" content="OdiaTube AI Transcriber | YouTube Video to Odia & English Transcript & PDF" />
-    <meta name="description" content="Convert English, Hindi, and Hinglish YouTube videos into high-quality English or Odia dialogue transcripts. Features exact timestamps, YouTube English transcript exporter, embedded Noto Sans Oriya fonts, custom fine-tuned T5/NLLB-200 translation models, and dual-column PDF downloads." />
-    <meta name="keywords" content="English transcription from YouTube, YouTube English transcriber, YouTube dialogue exporter, transcribe YouTube to English, Odia transcriber, YouTube to Odia transcript, Odia speech to text, English to Odia translation, Hindi to Odia translation, IndicTrans2 Odia, T5 translation model, Odia PDF generator, YouTube dialogue transcription, AI Odia translator" />
+    <meta name="description" content="Convert English, Hindi, Bengali, Telugu, Tamil, Marathi, Spanish, French, and Odia YouTube videos into high-quality transcripts. Features dynamic search resolution, automatic English pivot translation, and dual-column PDF downloads." />
+    <meta name="keywords" content="OdiaTube, YouTube transcriber, transcribe YouTube to English, Odia transcriber, YouTube to Odia transcript, Odia speech to text, English to Odia translation, Hindi to Odia translation, IndicTrans2 Odia, T5 translation model, Odia PDF generator, YouTube dialogue transcription, AI Odia translator" />
     <meta name="author" content="Sekhar03" />
     <meta name="robots" content="index, follow" />
 
@@ -29,6 +34,33 @@
 
     <!-- Canonical URL -->
     <link rel="canonical" href="https://github.com/Sekhar03/odia-transcriber" />
+
+    <!-- Structured Data (JSON-LD) for SoftwareApplication -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "OdiaTube AI Transcriber",
+      "operatingSystem": "All",
+      "applicationCategory": "MultimediaApplication",
+      "description": "Convert YouTube videos (English, Hindi, Telugu, Tamil, Marathi, Odia, Spanish, etc.) into high-quality transcripts and download them as beautifully structured PDFs.",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "featureList": [
+        "Dynamic YouTube Search Query Resolution",
+        "Automatic English Pivot Translation for Accuracy",
+        "Dual-column PDF Transcript Exporter",
+        "Multi-stage Translation Fallbacks (IndicTrans2, NLLB-200, MyMemory)"
+      ],
+      "author": {
+        "@type": "Person",
+        "name": "Sekhar03"
+      }
+    }
+    </script>
   </head>
   <body>
     <div id="root"></div>
