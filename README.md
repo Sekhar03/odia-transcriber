@@ -19,17 +19,20 @@ To maximize discoverability, make sure to add these topics to your GitHub reposi
 ## ✨ Features
 
 - **Full Dialogue Preservation**: Captures and preserves 100% of spoken conversation without lossy summaries.
-- **AI-Powered Speech & Translation Engine**:
-  - Integrates **AI4Bharat IndicConformer ASR** & **IndicTrans2 (1B)** multilingual translation models for high-quality English/Hindi → Odia conversion.
+- **AI-Powered Speech & Multilingual Translation Engine**:
+  - Integrates **AI4Bharat IndicConformer ASR**, **IndicTrans2**, and **Meta's NLLB-200 (600M)** models to translate transcripts into **12 target languages**: Odia (ଓଡ଼ିଆ), English, Hindi, Bengali, Telugu, Tamil, Marathi, Spanish, French, Gujarati, Kannada, and Punjabi.
   - Features an **Ultra-Fast Parallel Batch Translation Engine** to translate over 100+ lines in under 2.5 seconds (ensures 100% Vercel serverless compliance).
   - Built-in fallback to Google Translate API with POST requests to handle rate limits and oversized payloads gracefully.
 - **Speaker Diarization & Conversational Turns**: Detects conversational turns and labels them clearly (`Speaker 1`, `Speaker 2`, etc.) with customizable speaker labels.
 - **Smart Glyph & Language Sanitization**: Automatic cleanup of ASR noise, duplicate words, mangled text, and Devanagari/Latin character attachment issues.
-- **Embedded Odia Fonts**: Fully embeds `NotoSansOriya-Regular.ttf` & `NotoSansOriya-Bold.ttf` directly into the PDF binary, guaranteeing flawless rendering.
+- **Smart Font & PDF Generation Engine**:
+  - Fully embeds `NotoSansOriya-Regular.ttf` & `NotoSansOriya-Bold.ttf` directly into the PDF binary, guaranteeing flawless rendering for Odia script.
+  - Automatically falls back to standard `Helvetica` engines for English and other global languages to prevent encoding errors or broken glyph boxes (`□`).
 - **Interactive UI (React + Vite + Tailwind CSS)**:
+  - Dropdown **Target Language Selector** to switch between 12 supported languages.
   - Dynamic YouTube player with seeking capability based on dialogue timestamps.
-  - Multi-layout PDF exports (Dual-column source + Odia, single-column Odia, or side-by-side comparison).
-  - Inline Odia text editor to refine transcriptions before PDF generation.
+  - Multi-layout PDF exports (Dual-column source + translation, single-column translation, or side-by-side comparison).
+  - Inline dialogue text editor to refine transcripts before PDF generation.
   - Confetti animations for completion & smooth dark-mode UI.
 
 ---
@@ -199,6 +202,31 @@ The project includes a custom fine-tuned translation model for English-Odia and 
 * **Scripts**:
   * Training: [`scripts/train_model.py`](file:///c:/Users/sekha/Downloads/transacribe%20odia/scripts/train_model.py)
   * Server: [`scripts/local_translation_server.py`](file:///c:/Users/sekha/Downloads/transacribe%20odia/scripts/local_translation_server.py) loads the model weights saved in `./results_translation` to host a local translation microservice on port `5002`.
+
+---
+
+## 🌿 Branching Workflow (Testing & Staging)
+
+To ensure stability, updates and testing for each language are staged on dedicated Git branches before being pushed to production on the `main` branch. 
+
+Available language branches:
+* **Odia:** `lang-odia`
+* **Bengali:** `lang-bengali`
+* **Telugu:** `lang-telugu`
+* **Tamil:** `lang-tamil`
+* **Hindi:** `lang-hindi`
+* **Marathi:** `lang-marathi`
+* **Gujarati:** `lang-gujarati`
+* **Kannada:** `lang-kannada`
+* **Punjabi:** `lang-punjabi`
+* **Spanish:** `lang-spanish`
+* **French:** `lang-french`
+
+To check out a specific branch for testing:
+```bash
+git checkout lang-[language]
+```
+Once changes on a language branch are finalized and verified, merge the branch into `main` to trigger the production deployment.
 
 ---
 
