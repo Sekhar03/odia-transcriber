@@ -112,7 +112,7 @@ async function translateSingleText(text, targetLang = 'or', srcLang = 'eng_Latn'
   if (!text || !text.trim()) return '';
   const cleanedInput = cleanAsrArtifacts(text);
 
-  const needsOdiaCheck = targetLang === 'or' && /[a-zA-Z]/.test(cleanedInput);
+  const needsOdiaCheck = targetLang === 'or' && !hasOdiaCharacters(cleanedInput);
   const finalTgtLang = NLLB_LANG_MAP[targetLang] || tgtLang;
 
   // 0. Try Local Translation Server (T5 fine-tuned model) - only for Odia & English
