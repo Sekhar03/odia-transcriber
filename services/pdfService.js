@@ -67,7 +67,7 @@ function createOdiaPDF(data, stream) {
   try {
     const { metadata = {}, lines = [], pdfLayout = 'monologue', pdfTitle = '', sourceLanguage = 'English / Hindi', targetLang = 'or', summary = {} } = data;
 
-    const isEnglishTarget = targetLang === 'en';
+    const isOdiaTarget = targetLang === 'or';
 
     const doc = new PDFDocument({
       margin: 50,
@@ -96,7 +96,7 @@ function createOdiaPDF(data, stream) {
 
     // Document Title
     const titleText = pdfTitle || metadata.title || 'YouTube Video Dialogue';
-    if (!isEnglishTarget && containsOdia(titleText)) {
+    if (isOdiaTarget && containsOdia(titleText)) {
       doc.font(fontOdiaBold).fontSize(20).fillColor(primaryColor)
          .text(sanitizeTextForOdiaPdf(titleText), { lineGap: 4 });
     } else {
@@ -105,15 +105,15 @@ function createOdiaPDF(data, stream) {
     }
     doc.moveDown(1.5);
 
-    const sections = summary.sections || [{ title: isEnglishTarget ? 'Dialogue Content' : 'ସଂଳାପ ବିବରଣୀ', lines }];
+    const sections = summary.sections || [{ title: isOdiaTarget ? 'ସଂଳାପ ବିବରଣୀ' : 'Dialogue Content', lines }];
 
     // Continuous Monologue Paragraphs Layout (Used for all outputs)
     sections.forEach((sec, secIdx) => {
       // Merge all lines in this section into a continuous text block
       const mergedText = sec.lines.map(line => {
-        return isEnglishTarget
-          ? sanitizeAsciiOnly(line.odiaText || line.text || '')
-          : sanitizeTextForOdiaPdf(line.odiaText || line.text || '');
+        return isOdiaTarget
+          ? sanitizeTextForOdiaPdf(line.odiaText || line.text || '')
+          : (line.odiaText || line.text || '');
       }).join(' ').trim();
 
       if (!mergedText) return;
@@ -125,7 +125,7 @@ function createOdiaPDF(data, stream) {
       }
 
       // Render as a clean, wrapped paragraph
-      doc.font(isEnglishTarget ? 'Helvetica' : fontOdiaReg).fontSize(10.5).fillColor(darkTextColor)
+      doc.font(isOdiaTarget ? fontOdiaReg : 'Helvetica').fontSize(10.5).fillColor(darkTextColor)
          .text(mergedText, { align: 'justify', lineGap: 4 });
       
       // Only move down if there is another section following this one
