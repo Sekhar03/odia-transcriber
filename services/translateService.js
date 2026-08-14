@@ -234,7 +234,8 @@ async function translateSingleText(text, targetLang = 'or', srcLang = 'eng_Latn'
   let googleSuccess = false;
 
   try {
-    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t`;
+    try {
+      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t`;
     
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 6000);
