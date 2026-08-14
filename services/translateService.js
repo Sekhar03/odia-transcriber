@@ -317,6 +317,8 @@ async function translateSingleText(text, targetLang = 'or', srcLang = 'eng_Latn'
       const translatedParts = await Promise.all(parts.map(async (part) => {
         if (/^([,.;!?]|\band\b|\s+)$/i.test(part)) return part;
         if (!/[a-zA-Z]/.test(part)) return part;
+        
+        // 1. Try Google Translate for this clause
         try {
           const urlEn = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${targetLang}&dt=t`;
           const resEn = await fetch(urlEn, {
@@ -337,6 +339,20 @@ async function translateSingleText(text, targetLang = 'or', srcLang = 'eng_Latn'
             }
           }
         } catch (e) {}
+
+        // 2. Try MyMemory for this clause if Google failed
+        try {
+          const myMemoryUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(part)}&langpair=en|${targetLang}`;
+          const myMemoryRes = await fetch(myMemoryUrl);
+          if (myMemoryRes.ok) {
+            const myMemoryData = await myMemoryRes.json();
+            const candidate = myMemoryData?.responseData?.translatedText;
+            if (candidate && hasTargetScriptCharacters(candidate, targetLang)) {
+              return candidate;
+            }
+          }
+        } catch (myMemErr) {}
+
         return part;
       }));
       const candidate = translatedParts.join('');
