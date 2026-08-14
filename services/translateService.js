@@ -230,6 +230,9 @@ async function translateSingleText(text, targetLang = 'or', srcLang = 'eng_Latn'
   }
 
   // 2. Fallback to Google Translate API using POST request (prevents 413 URL Too Large error)
+  let translatedText = text;
+  let googleSuccess = false;
+
   try {
     const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t`;
     
@@ -248,97 +251,101 @@ async function translateSingleText(text, targetLang = 'or', srcLang = 'eng_Latn'
 
     clearTimeout(timeoutId);
 
-    if (!res.ok) throw new Error(`Translation request failed: ${res.status}`);
-    const data = await res.json();
-    let translatedText = text;
-
-    if (data && data[0]) {
-      translatedText = data[0].map(item => item[0]).filter(Boolean).join('');
-    }
-
-    // Google Translate retry with explicit English source if it fails to produce target characters
-    if (needsLanguageCheck && !hasTargetScriptCharacters(translatedText, targetLang)) {
-      console.log(`[Google Translate Bypass]: sl=auto returned no ${targetLang} for "${cleanedInput}". Retrying with sl=en...`);
-      try {
-        const urlEn = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${targetLang}&dt=t`;
-        const resEn = await fetch(urlEn, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-          },
-          body: 'q=' + encodeURIComponent(cleanedInput)
-        });
-        if (resEn.ok) {
-          const dataEn = await resEn.json();
-          if (dataEn && dataEn[0]) {
-            const candidate = dataEn[0].map(item => item[0]).filter(Boolean).join('');
-            if (hasTargetScriptCharacters(candidate, targetLang)) {
-              translatedText = candidate;
-            }
-          }
-        }
-      } catch (errEn) {
-        // ignore
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data[0]) {
+        translatedText = data[0].map(item => item[0]).filter(Boolean).join('');
+        googleSuccess = true;
       }
     }
+  } catch (err) {
+    console.log(`[Google Translate sl=auto Failed]: ${err.message}`);
+  }
 
-    // Try MyMemory translation API if still no target characters
-    if (needsLanguageCheck && !hasTargetScriptCharacters(translatedText, targetLang)) {
-      console.log(`[MyMemory Fallback]: Retrying translation for "${cleanedInput}" via MyMemory API...`);
-      try {
-        const myMemoryUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(cleanedInput)}&langpair=en|${targetLang}`;
-        const myMemoryRes = await fetch(myMemoryUrl);
-        if (myMemoryRes.ok) {
-          const myMemoryData = await myMemoryRes.json();
-          const candidate = myMemoryData?.responseData?.translatedText;
-          if (candidate && hasTargetScriptCharacters(candidate, targetLang)) {
+  // Google Translate retry with explicit English source if it fails to produce target characters
+  if (needsLanguageCheck && (!googleSuccess || !hasTargetScriptCharacters(translatedText, targetLang))) {
+    console.log(`[Google Translate Bypass]: sl=auto returned no ${targetLang} for "${cleanedInput}". Retrying with sl=en...`);
+    try {
+      const urlEn = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${targetLang}&dt=t`;
+      const resEn = await fetch(urlEn, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        },
+        body: 'q=' + encodeURIComponent(cleanedInput)
+      });
+      if (resEn.ok) {
+        const dataEn = await resEn.json();
+        if (dataEn && dataEn[0]) {
+          const candidate = dataEn[0].map(item => item[0]).filter(Boolean).join('');
+          if (hasTargetScriptCharacters(candidate, targetLang)) {
             translatedText = candidate;
+            googleSuccess = true;
           }
         }
-      } catch (errMyMemory) {
-        // ignore
       }
+    } catch (errEn) {
+      // ignore
     }
+  }
 
-    // Failsafe: Try translating by splitting sentence into smaller chunks/clauses
-    if (needsLanguageCheck && !hasTargetScriptCharacters(translatedText, targetLang)) {
-      console.log(`[Splitting Fallback]: Translating sentence by splitting into clauses: "${cleanedInput}"`);
-      try {
-        const parts = cleanedInput.split(/([,.;!?]|\band\b)/gi);
-        const translatedParts = await Promise.all(parts.map(async (part) => {
-          if (/^([,.;!?]|\band\b|\s+)$/i.test(part)) return part;
-          if (!/[a-zA-Z]/.test(part)) return part;
-          try {
-            const urlEn = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${targetLang}&dt=t`;
-            const resEn = await fetch(urlEn, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-              },
-              body: 'q=' + encodeURIComponent(part)
-            });
-            if (resEn.ok) {
-              const dataEn = await resEn.json();
-              if (dataEn && dataEn[0]) {
-                const candidate = dataEn[0].map(item => item[0]).filter(Boolean).join('');
-                if (hasTargetScriptCharacters(candidate, targetLang)) {
-                  return candidate;
-                }
-              }
-            }
-          } catch (e) {}
-          return part;
-        }));
-        const candidate = translatedParts.join('');
-        if (hasTargetScriptCharacters(candidate, targetLang)) {
+  // Try MyMemory translation API if still no target characters
+  if (needsLanguageCheck && !hasTargetScriptCharacters(translatedText, targetLang)) {
+    console.log(`[MyMemory Fallback]: Retrying translation for "${cleanedInput}" via MyMemory API...`);
+    try {
+      const myMemoryUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(cleanedInput)}&langpair=en|${targetLang}`;
+      const myMemoryRes = await fetch(myMemoryUrl);
+      if (myMemoryRes.ok) {
+        const myMemoryData = await myMemoryRes.json();
+        const candidate = myMemoryData?.responseData?.translatedText;
+        if (candidate && hasTargetScriptCharacters(candidate, targetLang)) {
           translatedText = candidate;
         }
-      } catch (errSplit) {
-        // ignore
       }
+    } catch (errMyMemory) {
+      // ignore
     }
+  }
+
+  // Failsafe: Try translating by splitting sentence into smaller chunks/clauses
+  if (needsLanguageCheck && !hasTargetScriptCharacters(translatedText, targetLang)) {
+    console.log(`[Splitting Fallback]: Translating sentence by splitting into clauses: "${cleanedInput}"`);
+    try {
+      const parts = cleanedInput.split(/([,.;!?]|\band\b)/gi);
+      const translatedParts = await Promise.all(parts.map(async (part) => {
+        if (/^([,.;!?]|\band\b|\s+)$/i.test(part)) return part;
+        if (!/[a-zA-Z]/.test(part)) return part;
+        try {
+          const urlEn = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${targetLang}&dt=t`;
+          const resEn = await fetch(urlEn, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            },
+            body: 'q=' + encodeURIComponent(part)
+          });
+          if (resEn.ok) {
+            const dataEn = await resEn.json();
+            if (dataEn && dataEn[0]) {
+              const candidate = dataEn[0].map(item => item[0]).filter(Boolean).join('');
+              if (hasTargetScriptCharacters(candidate, targetLang)) {
+                return candidate;
+              }
+            }
+          }
+        } catch (e) {}
+        return part;
+      }));
+      const candidate = translatedParts.join('');
+      if (hasTargetScriptCharacters(candidate, targetLang)) {
+        translatedText = candidate;
+      }
+    } catch (errSplit) {
+      // ignore
+    }
+  }
 
     if (targetLang === 'or') {
       Object.keys(TECHNICAL_TERM_MAP).forEach(term => {
