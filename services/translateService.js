@@ -40,7 +40,9 @@ const NLLB_LANG_MAP = {
 function cleanAsrArtifacts(text) {
   if (!text) return '';
   let cleaned = text.replace(/\b(\w+)\s+\1\b/gi, '$1');
-  cleaned = cleaned.replace(/\[\s*(ମ୍ୟୁଜିକ୍|ସଙ୍ଗୀତ|music|applause|प्रशंसा|संगीत|ଅଶ୍ରବ୍ୟ)\s*\]/gi, '').trim();
+  cleaned = cleaned.replace(/\[\s*[^\]\d]{1,20}\s*\]/g, '')
+                   .replace(/\(\s*[^)\d]{1,20}\s*\)/g, '')
+                   .trim();
   return cleaned;
 }
 
@@ -48,8 +50,9 @@ function cleanOdiaMangledWords(text) {
   if (!text) return '';
   let s = String(text);
 
-  // 1. Remove music / noise tags
-  s = s.replace(/\[\s*(ମ୍ୟୁଜିକ୍|ସଙ୍ଗୀତ|music|applause|प्रशंसा|संगीत|ଅଶ୍ରବ୍ୟ)\s*\]/gi, '');
+  // 1. Remove music / noise tags dynamically
+  s = s.replace(/\[\s*[^\]\d]{1,20}\s*\]/g, '')
+       .replace(/\(\s*[^)\d]{1,20}\s*\)/g, '');
 
   // 2. Fix specific mangled English+Odia combinations
   const fixMap = [

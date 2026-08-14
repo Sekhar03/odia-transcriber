@@ -1041,7 +1041,13 @@ function processRawItemsToYouTubeData(rawItems, metadata, sourceLanguageOverride
       endFormatted: formatTime(endSec),
       text: cleanText
     };
-  }).filter(l => l.text && l.text !== '[Music]' && l.text !== '[♪♪♪]' && l.text !== '[ମ୍ୟୁଜିକ୍]' && l.text !== '[ସଙ୍ଗୀତ]');
+  }).filter(l => {
+    if (!l.text) return false;
+    const cleanedText = l.text.replace(/\[\s*[^\]\d]{1,20}\s*\]/g, '')
+                             .replace(/[♪♫★▪►]/g, '')
+                             .trim();
+    return cleanedText.length > 0;
+  });
 
   const mergedLines = [];
   let currentGroup = null;
