@@ -6,6 +6,8 @@
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Framework](https://img.shields.io/badge/Framework-React%20%2F%20Express-lightblue.svg)](#)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![Sponsor](https://img.shields.io/badge/Sponsor-Sekhar03-EA4AAA.svg)](https://github.com/sponsors/Sekhar03)
+
 
 An advanced, production-grade AI-powered **YouTube English & Odia Transcriber** web application that extracts and transcribes YouTube videos (supporting English, Hindi, and Hinglish/mixed dialogue) into complete, non-summarized natural English or Odia (ଓଡ଼ିଆ) dialogue transcripts and generates beautifully formatted PDF documents. 
 
