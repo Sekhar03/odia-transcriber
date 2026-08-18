@@ -5,9 +5,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "build": "npm install --prefix client && npx vite build client",
-    "render-build": "npm install && npm install --prefix client && npx vite build client",
-    "vercel-build": "npm install --prefix client && npx vite build client"
+    "build": "npm install --prefix client --include=dev && npx vite build client",
+    "render-build": "npm install --include=dev && npm install --prefix client --include=dev && npx vite build client",
+    "vercel-build": "npm install --prefix client --include=dev && npx vite build client"
   },
   "keywords": [
     "youtube",
