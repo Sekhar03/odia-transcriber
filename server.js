@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const { execSync } = require('child_process');
 const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const { getYouTubeData } = require('./services/youtubeService');
 const { translateLinesToTargetLanguage, translateSingleText } = require('./services/translateService');
 const { createOdiaPDF } = require('./services/pdfService');
@@ -55,6 +56,25 @@ app.use((req, res, next) => {
 });
 
 app.use(cors());
+
+// Rate limiting to prevent abuse
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per windowMs
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+const transcribeLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 10, // Limit each IP to 10 transcribe requests per hour
+  message: 'Too many transcription requests. Please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+app.use(limiter);
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
@@ -78,7 +98,7 @@ app.get('/api/health', (req, res) => {
 const { processContent } = require('./services/aiCleanerService');
 
 // API: Transcribe YouTube Video to Odia or English
-app.post('/api/transcribe', async (req, res) => {
+app.post('/api/transcribe', transcribeLimiter, async (req, res) => {
   const debugLogs = [];
   try {
     const { url, targetLang = 'or' } = req.body;
