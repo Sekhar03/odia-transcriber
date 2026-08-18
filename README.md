@@ -21,11 +21,11 @@ If this project helped you transcribe, translate, or solve broken Odia PDF glyph
 
 <p align="center">
   <a href="https://github.com/sponsors/Sekhar03">
-    <img src="https://img.shields.io/badge/Sponsor%20on%20GitHub-EA4AAA?style=for-the-badge&logo=github-sponsors&logoColor=white" alt="Sponsor on GitHub" />
+    <img src="https://img.shields.io/badge/Sponsor-Sekhar03-ea4aaa?style=for-the-badge&logo=github-sponsors&logoColor=white" alt="Sponsor Sekhar03" height="32" />
   </a>
   &nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://www.buymeacoffee.com/Sekhar03">
-    <img src="https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me A Coffee" />
+    <img src="https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me A Coffee" height="32" />
   </a>
 </p>
 
