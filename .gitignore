@@ -28,3 +28,7 @@ results_translation/checkpoint-*/
 results_nllb/checkpoint-*/
 results_nllb/*.safetensors
 dataset/*.jsonl
+results/
+trans-api/
+
+

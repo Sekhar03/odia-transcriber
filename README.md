@@ -5,6 +5,7 @@
 [![Translation](https://img.shields.io/badge/Translation-English%20%2F%20Hindi%20%E2%86%92%20Odia-brightgreen.svg)](#)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Framework](https://img.shields.io/badge/Framework-React%20%2F%20Express-lightblue.svg)](#)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 An advanced, production-grade AI-powered **YouTube English & Odia Transcriber** web application that extracts and transcribes YouTube videos (supporting English, Hindi, and Hinglish/mixed dialogue) into complete, non-summarized natural English or Odia (ଓଡ଼ିଆ) dialogue transcripts and generates beautifully formatted PDF documents. 
 
@@ -205,32 +206,31 @@ The project includes a custom fine-tuned translation model for English-Odia and 
 
 ---
 
-## 🌿 Branching Workflow (Testing & Staging)
+## 🌿 Branching Workflow
 
-To ensure stability, updates and testing for each language are staged on dedicated Git branches before being pushed to production on the `main` branch. 
+To ensure stability, we follow a structured branching model:
+* **`main`**: Production-ready code. Matches the live environment.
+* **`staging`**: Pre-release verification branch.
+* **`dev`**: The primary integration branch where new features and bug fixes are merged.
+* **`feature/*` / `bugfix/*`**: Task-specific branches created by developers for coding.
 
-Available language branches:
-* **Odia:** `lang-odia`
-* **Bengali:** `lang-bengali`
-* **Telugu:** `lang-telugu`
-* **Tamil:** `lang-tamil`
-* **Hindi:** `lang-hindi`
-* **Marathi:** `lang-marathi`
-* **Gujarati:** `lang-gujarati`
-* **Kannada:** `lang-kannada`
-* **Punjabi:** `lang-punjabi`
-* **Spanish:** `lang-spanish`
-* **French:** `lang-french`
-
-To check out a specific branch for testing:
+To check out the integration branch:
 ```bash
-git checkout lang-[language]
+git checkout dev
 ```
-Once changes on a language branch are finalized and verified, merge the branch into `main` to trigger the production deployment.
+All pull requests should be submitted against the `dev` branch.
+
+---
+
+## 🤝 Contributing
+
+We welcome contributions from developers, translators, and language enthusiasts! Whether you're fixing bugs, optimizing speech translation engines, translating transcripts, or improving the frontend UI, your help is appreciated.
+
+Please check out our [Contributing Guide](CONTRIBUTING.md) to get started on setting up the codebase and submitting Pull Requests.
 
 ---
 
 ## 📄 License
 
-This project is licensed under the [MIT License](file:///c:/Users/sekha/Downloads/transacribe%20odia/LICENSE) - see the [LICENSE](file:///c:/Users/sekha/Downloads/transacribe%20odia/LICENSE) file for details.
+This project is licensed under the [MIT License](LICENSE) - see the [LICENSE](LICENSE) file for details.
 

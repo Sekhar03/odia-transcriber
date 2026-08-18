@@ -155,7 +155,7 @@ async function translateSingleText(text, targetLang = 'or', srcLang = 'eng_Latn'
       if (localRes.ok) {
         const localData = await localRes.json();
         if (localData.translatedText) {
-          console.log(`[Local Translation Server Success]: "${cleanedInput}" -> "${localData.translatedText}"`);
+          console.log(`[Local Translation Server Success]: Translation successful`);
           const result = targetLang === 'or' ? sanitizeOdiaForPdf(localData.translatedText) : cleanAsrArtifacts(localData.translatedText);
           if (!needsLanguageCheck || hasTargetScriptCharacters(result, targetLang)) {
             return result;
@@ -202,7 +202,7 @@ async function translateSingleText(text, targetLang = 'or', srcLang = 'eng_Latn'
         const hfData = await hfRes.json();
         const translatedText = hfData?.[0]?.generated_text || hfData?.[0]?.translation_text || hfData?.generated_text || hfData?.translation_text;
         if (translatedText) {
-          console.log(`[Hugging Face Cloud Inference Success]: "${cleanedInput}" -> "${translatedText}"`);
+          console.log(`[Hugging Face Cloud Inference Success]: Translation successful`);
           const result = targetLang === 'or' ? sanitizeOdiaForPdf(translatedText) : cleanAsrArtifacts(translatedText);
           if (!needsLanguageCheck || hasTargetScriptCharacters(result, targetLang)) {
             return result;
@@ -265,7 +265,7 @@ async function translateSingleText(text, targetLang = 'or', srcLang = 'eng_Latn'
 
   // Google Translate retry with explicit English source if it fails to produce target characters
   if (needsLanguageCheck && (!googleSuccess || !hasTargetScriptCharacters(translatedText, targetLang))) {
-    console.log(`[Google Translate Bypass]: sl=auto returned no ${targetLang} for "${cleanedInput}". Retrying with sl=en...`);
+    console.log(`[Google Translate Bypass]: sl=auto returned no ${targetLang}. Retrying with sl=en...`);
     try {
       const urlEn = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${targetLang}&dt=t`;
       const resEn = await fetch(urlEn, {
@@ -293,7 +293,7 @@ async function translateSingleText(text, targetLang = 'or', srcLang = 'eng_Latn'
 
   // Try MyMemory translation API if still no target characters
   if (needsLanguageCheck && !hasTargetScriptCharacters(translatedText, targetLang)) {
-    console.log(`[MyMemory Fallback]: Retrying translation for "${cleanedInput}" via MyMemory API...`);
+    console.log(`[MyMemory Fallback]: Retrying translation via MyMemory API...`);
     try {
       const myMemoryUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(cleanedInput)}&langpair=en|${targetLang}`;
       const myMemoryRes = await fetch(myMemoryUrl);
@@ -311,7 +311,7 @@ async function translateSingleText(text, targetLang = 'or', srcLang = 'eng_Latn'
 
   // Failsafe: Try translating by splitting sentence into smaller chunks/clauses
   if (needsLanguageCheck && !hasTargetScriptCharacters(translatedText, targetLang)) {
-    console.log(`[Splitting Fallback]: Translating sentence by splitting into clauses: "${cleanedInput}"`);
+    console.log(`[Splitting Fallback]: Translating sentence by splitting into clauses`);
     try {
       const parts = cleanedInput.split(/([,.;!?]|\band\b)/gi);
       const translatedParts = await Promise.all(parts.map(async (part) => {
@@ -387,6 +387,26 @@ async function translateSingleText(text, targetLang = 'or', srcLang = 'eng_Latn'
 async function translateLinesToTargetLanguage(lines, targetLang = 'or', onProgressUpdate) {
   if (!lines || lines.length === 0) return [];
 
+  // Pivot Translation: If target is not English and source is not English, translate to English first.
+  let sourceLines = lines;
+  if (targetLang !== 'en') {
+    const sampleText = lines.slice(0, 5).map(l => l.text).join(' ');
+    const hasForeignCharacters = /[^\x00-\x7F]/.test(sampleText);
+    
+    if (hasForeignCharacters) {
+      console.log(`[Pivot Translation]: Non-English source detected. Translating source transcript to English master first...`);
+      try {
+        const englishLines = await translateLinesToTargetLanguage(lines, 'en', onProgressUpdate);
+        sourceLines = englishLines.map(el => ({
+          ...el,
+          text: el.translatedText
+        }));
+      } catch (errPivot) {
+        console.error(`[Pivot Translation Failed]:`, errPivot.message);
+      }
+    }
+  }
+
   if (onProgressUpdate) {
     const progressLabel = targetLang === 'en' ? 'converting_to_english' : `converting_to_${targetLang}`;
     onProgressUpdate(progressLabel);
@@ -394,8 +414,8 @@ async function translateLinesToTargetLanguage(lines, targetLang = 'or', onProgre
 
   const batchSize = 15;
   const batches = [];
-  for (let i = 0; i < lines.length; i += batchSize) {
-    batches.push(lines.slice(i, i + batchSize));
+  for (let i = 0; i < sourceLines.length; i += batchSize) {
+    batches.push(sourceLines.slice(i, i + batchSize));
   }
 
   const translatedBatches = await Promise.all(
@@ -417,7 +437,7 @@ async function translateLinesToTargetLanguage(lines, targetLang = 'or', onProgre
 
           // Checker check: if target is Odia, source has letters, but final output has no Odia characters
           if (targetLang === 'or' && /[a-zA-Z]/.test(l.text) && !hasOdiaCharacters(finalTranslated)) {
-            console.log(`[Batch Checker Retry]: Line "${l.text}" did not translate to Odia. Retrying line individually...`);
+            console.log(`[Batch Checker Retry]: Line did not translate to Odia. Retrying line individually...`);
             const retried = await translateSingleText(l.text, targetLang, srcLang, tgtLang);
             if (hasOdiaCharacters(retried)) {
               finalTranslated = retried;

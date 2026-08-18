@@ -1,0 +1,38 @@
+name: 🚀 Feature Request
+description: Suggest a new idea or improvement for this project
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have an idea to make OdiaTube AI Transcriber better? We'd love to hear it!
+  - type: textarea
+    id: feature_description
+    attributes:
+      label: Describe your idea
+      description: A clear and concise description of the feature or improvement you would like to see.
+      placeholder: I would like to suggest...
+    validations:
+      required: true
+  - type: textarea
+    id: problem_solved
+    attributes:
+      label: Problem this solves
+      description: Is your feature request related to a problem? Please describe.
+      placeholder: E.g., it is difficult to do X because...
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternative Solutions
+      description: Any alternative solutions or features you have considered.
+    validations:
+      required: false
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: Additional Context
+      description: Add any other context or screenshots about the feature request here.
+    validations:
+      required: false

@@ -3,6 +3,7 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const { execSync } = require('child_process');
+const helmet = require('helmet');
 const { getYouTubeData } = require('./services/youtubeService');
 const { translateLinesToTargetLanguage, translateSingleText } = require('./services/translateService');
 const { createOdiaPDF } = require('./services/pdfService');
@@ -10,11 +11,43 @@ const { createOdiaPDF } = require('./services/pdfService');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Security headers
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", "https:"],
+      fontSrc: ["'self'", "data:"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'none'"]
+    }
+  },
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true
+  }
+}));
+
 // Explicit CORS middleware for cloud cross-domain requests
+// Note: CORS is set to * as this is a public API without authentication
+// The app only processes public YouTube URLs and doesn't handle sensitive user data
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, DELETE');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  const allowedOrigins = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : ['*'];
+  const origin = req.headers.origin;
+  
+  if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', allowedOrigins.includes('*') ? '*' : origin);
+  }
+  
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+  res.header('Access-Control-Max-Age', '86400');
+  
   if (req.method === 'OPTIONS') {
     return res.sendStatus(200);
   }
@@ -49,11 +82,22 @@ app.post('/api/transcribe', async (req, res) => {
   const debugLogs = [];
   try {
     const { url, targetLang = 'or' } = req.body;
-    if (!url) {
+    
+    // Input validation
+    if (!url || typeof url !== 'string') {
       return res.status(400).json({ success: false, error: 'YouTube video URL is required.' });
     }
-
-    console.log(`[API /api/transcribe] Processing YouTube URL: ${url} (Target: ${targetLang})`);
+    
+    // Validate target language
+    const validLangs = ['or', 'en', 'hi'];
+    if (!validLangs.includes(targetLang)) {
+      return res.status(400).json({ success: false, error: 'Invalid target language. Supported: or, en, hi' });
+    }
+    
+    // Sanitize URL to prevent injection attacks
+    const sanitizedUrl = url.trim().substring(0, 500); // Limit length
+    
+    console.log(`[API /api/transcribe] Processing YouTube URL (Target: ${targetLang})`);
     
     const progressLogs = [];
     const onProgressUpdate = (step) => {
@@ -61,7 +105,7 @@ app.post('/api/transcribe', async (req, res) => {
       progressLogs.push(step);
     };
 
-    const ytData = await getYouTubeData(url, onProgressUpdate, debugLogs);
+    const ytData = await getYouTubeData(sanitizedUrl, onProgressUpdate, debugLogs);
     
     // Assign unique IDs to prevent duplicate mappings on identical offsets
     ytData.lines = ytData.lines.map((l, idx) => ({ ...l, id: idx }));
@@ -100,8 +144,8 @@ app.post('/api/transcribe', async (req, res) => {
     console.error('[API /api/transcribe Error]', err.message);
     return res.status(500).json({
       success: false,
-      error: err.message,
-      debugLogs
+      error: 'An error occurred during transcription. Please try again.',
+      correlationId: Date.now().toString()
     });
   }
 });
@@ -110,11 +154,26 @@ app.post('/api/transcribe', async (req, res) => {
 app.post('/api/translate-text', async (req, res) => {
   try {
     const { text, targetLang = 'or' } = req.body;
-    if (!text) return res.json({ success: true, translatedText: '' });
-    const translatedText = await translateSingleText(text, targetLang);
+    
+    // Input validation
+    if (!text || typeof text !== 'string') {
+      return res.json({ success: true, translatedText: '' });
+    }
+    
+    // Validate target language
+    const validLangs = ['or', 'en', 'hi'];
+    if (!validLangs.includes(targetLang)) {
+      return res.status(400).json({ success: false, error: 'Invalid target language. Supported: or, en, hi' });
+    }
+    
+    // Sanitize text input
+    const sanitizedText = text.trim().substring(0, 5000); // Limit length
+    
+    const translatedText = await translateSingleText(sanitizedText, targetLang);
     return res.json({ success: true, translatedText });
   } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
+    console.error('[API /api/translate-text Error]', err.message);
+    return res.status(500).json({ success: false, error: 'Translation failed. Please try again.' });
   }
 });
 
@@ -122,8 +181,27 @@ app.post('/api/translate-text', async (req, res) => {
 app.post('/api/generate-pdf', (req, res) => {
   try {
     const { metadata = {}, lines = [], pdfLayout = 'dual', pdfTitle = '', sourceLanguage = 'English / Hindi', targetLang = 'or', summary = {} } = req.body;
-    if (!lines || !lines.length) {
+    
+    // Input validation
+    if (!lines || !Array.isArray(lines) || !lines.length) {
       return res.status(400).json({ error: 'No dialogue lines provided for PDF generation.' });
+    }
+    
+    // Validate target language
+    const validLangs = ['or', 'en', 'hi'];
+    if (!validLangs.includes(targetLang)) {
+      return res.status(400).json({ error: 'Invalid target language. Supported: or, en, hi' });
+    }
+    
+    // Validate PDF layout
+    const validLayouts = ['dual', 'source', 'target'];
+    if (!validLayouts.includes(pdfLayout)) {
+      return res.status(400).json({ error: 'Invalid PDF layout. Supported: dual, source, target' });
+    }
+    
+    // Limit lines to prevent DoS
+    if (lines.length > 10000) {
+      return res.status(400).json({ error: 'Too many lines. Maximum 10000 lines allowed.' });
     }
 
     const rawTitle = pdfTitle || metadata?.title || `YouTube_Dialogue_${targetLang.toUpperCase()}`;
@@ -160,7 +238,7 @@ app.post('/api/generate-pdf', (req, res) => {
   } catch (err) {
     console.error('[API /api/generate-pdf Error]', err.message);
     if (!res.headersSent) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: 'PDF generation failed. Please try again.' });
     }
   }
 });

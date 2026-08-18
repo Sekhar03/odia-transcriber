@@ -2,7 +2,7 @@ const { YoutubeTranscript } = require('youtube-transcript');
 const he = require('he');
 const https = require('https');
 
-const INNERTUBE_API_KEY = process.env.INNERTUBE_API_KEY || 'AIzaSyAO_FJ2Slv5QZ0_A9-x_M4_J8-M';
+const INNERTUBE_API_KEY = process.env.INNERTUBE_API_KEY;
 const FETCH_TIMEOUT_MS = 12000;
 
 const ANDROID_UA = 'com.google.android.youtube/20.10.38 (Linux; U; Android 14)';
