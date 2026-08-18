@@ -13,6 +13,24 @@ An advanced, production-grade AI-powered **YouTube English & Odia Transcriber** 
 
 The project solves the common issue of broken glyphs/boxes (`□`) in Odia text rendering by utilizing fully embedded **Noto Sans Oriya** fonts inside generated PDFs.
 
+---
+
+## 💖 Support & Sponsor
+
+If this project helped you transcribe, translate, or solve broken Odia PDF glyphs (`□`), please consider supporting its development and API hosting costs!
+
+<p align="center">
+  <a href="https://github.com/sponsors/Sekhar03">
+    <img src="https://img.shields.io/badge/Sponsor%20on%20GitHub-EA4AAA?style=for-the-badge&logo=github-sponsors&logoColor=white" alt="Sponsor on GitHub" />
+  </a>
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.buymeacoffee.com/Sekhar03">
+    <img src="https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me A Coffee" />
+  </a>
+</p>
+
+---
+
 ### 🏷️ GitHub Repository Topics (Recommended settings for GitHub SEO)
 To maximize discoverability, make sure to add these topics to your GitHub repository settings:
 `youtube-english-transcription`, `youtube-transcript-generator`, `youtube-to-text`, `odia-transcriber`, `youtube-transcription`, `odia-speech-to-text`, `odia-translation`, `indictrans2-odia`, `youtube-to-odia-pdf`, `odia-pdf-generator`.
