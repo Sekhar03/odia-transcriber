@@ -2,9 +2,6 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "odia-transcriber",
   "compatibility_date": "2026-08-14",
-  "observability": {
-    "enabled": true
-  },
   "build": {
     "command": "npm run build"
   },
