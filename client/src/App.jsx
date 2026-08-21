@@ -117,6 +117,9 @@ export default function App() {
   const animationFrameRef = useRef(null);
   const audioContextRef = useRef(null);
   const analyserRef = useRef(null);
+  const recognitionRef = useRef(null);
+  const browserTranscriptionRef = useRef('');
+  const browserSpeechFailedRef = useRef(false);
 
   const startVisualizer = (stream) => {
     try {
@@ -176,6 +179,9 @@ export default function App() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioChunksRef.current = [];
+      browserTranscriptionRef.current = '';
+      browserSpeechFailedRef.current = false;
+
       const options = { mimeType: 'audio/webm' };
       let mediaRecorder;
       try {
@@ -196,6 +202,48 @@ export default function App() {
         stream.getTracks().forEach(track => track.stop());
       };
 
+      // Set up Inbuilt Web Speech Recognition (if available)
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        const rec = new SpeechRecognition();
+        rec.continuous = true;
+        rec.interimResults = true;
+        rec.lang = recordingLang;
+
+        rec.onstart = () => {
+          console.log('[Inbuilt ASR] Web Speech API active');
+        };
+
+        rec.onresult = (event) => {
+          let interimTranscript = '';
+          let finalTranscript = '';
+
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+              finalTranscript += event.results[i][0].transcript;
+            } else {
+              interimTranscript += event.results[i][0].transcript;
+            }
+          }
+
+          const txt = finalTranscript || interimTranscript;
+          if (txt) {
+            browserTranscriptionRef.current = txt;
+            setRecordedText(txt);
+          }
+        };
+
+        rec.onerror = (event) => {
+          console.warn('[Inbuilt ASR Error]', event.error);
+          browserSpeechFailedRef.current = true;
+        };
+
+        recognitionRef.current = rec;
+        rec.start();
+      } else {
+        browserSpeechFailedRef.current = true;
+      }
+
       mediaRecorderRef.current = mediaRecorder;
       mediaRecorder.start();
       setIsRecording(true);
@@ -214,6 +262,9 @@ export default function App() {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
+    }
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
     }
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
@@ -240,8 +291,65 @@ export default function App() {
   const handleTranscribeAudio = async (blob, mimeType) => {
     setMicProcessing(true);
     setError(null);
-    setRecordedText('Processing audio with Gemini...');
 
+    // If inbuilt browser speech recognition succeeded and returned text, use it!
+    if (browserTranscriptionRef.current && !browserSpeechFailedRef.current) {
+      setRecordedText('Translating transcription...');
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/transcribe-mic`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: browserTranscriptionRef.current,
+            sourceLang: recordingLang,
+            targetLang
+          })
+        });
+
+        const data = await res.json();
+        if (!data.success) {
+          throw new Error(data.error || 'Failed to process inbuilt transcription.');
+        }
+
+        const newLine = {
+          id: lines.length + 1,
+          start: lines.length > 0 ? lines[lines.length - 1].end + 1 : 0,
+          end: lines.length > 0 ? lines[lines.length - 1].end + 5 : 4,
+          startFormatted: formatTime(lines.length > 0 ? lines[lines.length - 1].end + 1 : 0),
+          endFormatted: formatTime(lines.length > 0 ? lines[lines.length - 1].end + 5 : 4),
+          speaker: 'Mic Speaker',
+          text: data.cleanedText,
+          odiaText: data.translatedText,
+          translatedText: data.translatedText
+        };
+
+        if (!metadata) {
+          setMetadata({
+            title: 'Microphone & Live Speech Transcription',
+            author: 'Live Recording',
+            durationFormatted: 'N/A',
+            videoId: ''
+          });
+          setSourceLanguage(recordingLang.split('-')[0].toUpperCase());
+        }
+
+        setLines(prev => [...prev, newLine]);
+        setRecordedText(data.cleanedText);
+
+        confetti({
+          particleCount: 50,
+          spread: 60,
+          origin: { y: 0.8 }
+        });
+        setMicProcessing(false);
+        return; // End transcription flow
+      } catch (err) {
+        console.warn('Inbuilt translation failed. Falling back to Gemini audio mode...', err);
+      }
+    }
+
+    // Gemini Audio processing backup
+    setRecordedText('Processing audio with Gemini...');
     try {
       const reader = new FileReader();
       reader.readAsDataURL(blob);
