@@ -673,7 +673,12 @@ export default function App() {
               </span>
               <textarea
                 value={recordedText}
-                onChange={(e) => setRecordedText(e.target.value)}
+                onChange={(e) => {
+                  setRecordedText(e.target.value);
+                  if (error && error.startsWith('Notice:')) {
+                    setError(null);
+                  }
+                }}
                 placeholder={isRecording ? 'Listening for speech...' : 'Click "Start Recording" and speak, or type/paste your text here directly.'}
                 className="w-full bg-slate-950/60 border border-slate-800/80 rounded-lg p-2.5 text-sm text-slate-300 min-h-[100px] outline-none focus:border-teal-500/50 resize-y font-mono italic"
               />
@@ -718,10 +723,16 @@ export default function App() {
           </div>
         )}
 
-        {/* Error Alert */}
+        {/* Error/Notice Alert */}
         {error && (
-          <div className="mt-2 bg-red-950/50 border border-red-800 text-red-300 rounded-xl p-4 flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+          <div className={`mt-2 border rounded-xl p-4 flex items-start gap-3 ${
+            error.startsWith('Notice:')
+              ? 'bg-amber-950/40 border-amber-800/80 text-amber-300'
+              : 'bg-red-950/50 border-red-800 text-red-300'
+          }`}>
+            <AlertCircle className={`w-5 h-5 flex-shrink-0 mt-0.5 ${
+              error.startsWith('Notice:') ? 'text-amber-400' : 'text-red-400'
+            }`} />
             <div className="text-sm">{error}</div>
           </div>
         )}
