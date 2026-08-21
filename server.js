@@ -201,14 +201,14 @@ app.post('/api/translate-text', async (req, res) => {
 // API: Transcribe and Clean Microphone speech
 app.post('/api/transcribe-mic', async (req, res) => {
   try {
-    const { text, sourceLang = 'en-US', targetLang = 'or' } = req.body;
+    const { text, sourceLang = 'en-US', targetLang = 'or', audioData = null, mimeType = 'audio/webm' } = req.body;
     
     // Input validation
-    if (!text || typeof text !== 'string') {
-      return res.status(400).json({ success: false, error: 'Speech text is required.' });
+    if (!text && !audioData) {
+      return res.status(400).json({ success: false, error: 'Speech text or audio data is required.' });
     }
     
-    const result = await processMicSpeech(text, sourceLang, targetLang);
+    const result = await processMicSpeech(text, sourceLang, targetLang, audioData, mimeType);
     return res.json({ success: true, ...result });
   } catch (err) {
     console.error('[API /api/transcribe-mic Error]', err.message);

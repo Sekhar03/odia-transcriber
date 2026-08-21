@@ -111,65 +111,49 @@ export default function App() {
   const [recordedText, setRecordedText] = useState('');
   const [recordingLang, setRecordingLang] = useState('en-US');
   const [micProcessing, setMicProcessing] = useState(false);
-  const recognitionRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
 
-  const startRecording = () => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      alert('Your browser does not support Speech Recognition. Please try Google Chrome or MS Edge.');
-      return;
-    }
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunksRef.current = [];
+      const options = { mimeType: 'audio/webm' };
+      let mediaRecorder;
+      try {
+        mediaRecorder = new MediaRecorder(stream, options);
+      } catch (e) {
+        mediaRecorder = new MediaRecorder(stream);
+      }
 
-    const rec = new SpeechRecognition();
-    rec.continuous = true;
-    rec.interimResults = true;
-    rec.lang = recordingLang;
-
-    rec.onstart = () => {
-      setIsRecording(true);
-      setRecordedText('');
-      setError(null);
-    };
-
-    rec.onresult = (event) => {
-      let interimTranscript = '';
-      let finalTranscript = '';
-
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        if (event.results[i].isFinal) {
-          finalTranscript += event.results[i][0].transcript;
-        } else {
-          interimTranscript += event.results[i][0].transcript;
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
         }
-      }
+      };
 
-      setRecordedText(finalTranscript || interimTranscript);
-    };
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType });
+        handleTranscribeAudio(audioBlob, mediaRecorder.mimeType);
+        stream.getTracks().forEach(track => track.stop());
+      };
 
-    rec.onerror = (event) => {
-      console.error('Speech recognition error:', event.error);
-      if (event.error === 'network') {
-        setError('Notice: Live speech recognition is unavailable because your browser could not connect to its cloud recognition servers. You can type or paste your spoken text into the preview box below to analyze/translate.');
-        stopRecording();
-      } else if (event.error !== 'no-speech') {
-        setError('Microphone error: ' + event.error);
-        stopRecording();
-      }
-    };
-
-    rec.onend = () => {
-      setIsRecording(false);
-    };
-
-    recognitionRef.current = rec;
-    rec.start();
+      mediaRecorderRef.current = mediaRecorder;
+      mediaRecorder.start();
+      setIsRecording(true);
+      setError(null);
+      setRecordedText('Listening... speak now and click Stop when done.');
+    } catch (err) {
+      console.error('Failed to start recording:', err);
+      setError('Could not access microphone. Please check your browser/system microphone permissions.');
+    }
   };
 
   const stopRecording = () => {
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
     }
-    setIsRecording(false);
   };
 
   const formatTime = (seconds) => {
@@ -186,9 +170,80 @@ export default function App() {
     return `${padMins}:${padSecs}`;
   };
 
+  const handleTranscribeAudio = async (blob, mimeType) => {
+    setMicProcessing(true);
+    setError(null);
+    setRecordedText('Processing audio with Gemini...');
+
+    try {
+      const reader = new FileReader();
+      reader.readAsDataURL(blob);
+      reader.onloadend = async () => {
+        try {
+          const base64Data = reader.result.split(',')[1];
+          const res = await fetch(`${API_BASE_URL}/api/transcribe-mic`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              audioData: base64Data,
+              mimeType: mimeType || 'audio/webm',
+              sourceLang: recordingLang,
+              targetLang
+            })
+          });
+
+          const data = await res.json();
+          if (!data.success) {
+            throw new Error(data.error || 'Failed to transcribe audio.');
+          }
+
+          const newLine = {
+            id: lines.length + 1,
+            start: lines.length > 0 ? lines[lines.length - 1].end + 1 : 0,
+            end: lines.length > 0 ? lines[lines.length - 1].end + 5 : 4,
+            startFormatted: formatTime(lines.length > 0 ? lines[lines.length - 1].end + 1 : 0),
+            endFormatted: formatTime(lines.length > 0 ? lines[lines.length - 1].end + 5 : 4),
+            speaker: 'Mic Speaker',
+            text: data.cleanedText,
+            odiaText: data.translatedText,
+            translatedText: data.translatedText
+          };
+
+          if (!metadata) {
+            setMetadata({
+              title: 'Microphone & Live Speech Transcription',
+              author: 'Live Recording',
+              durationFormatted: 'N/A',
+              videoId: ''
+            });
+            setSourceLanguage(recordingLang.split('-')[0].toUpperCase());
+          }
+
+          setLines(prev => [...prev, newLine]);
+          setRecordedText(data.cleanedText);
+
+          confetti({
+            particleCount: 50,
+            spread: 60,
+            origin: { y: 0.8 }
+          });
+        } catch (err) {
+          setError(err.message || 'Error transcribing mic speech.');
+          setRecordedText('');
+        } finally {
+          setMicProcessing(false);
+        }
+      };
+    } catch (err) {
+      setError(err.message || 'Error reading audio file.');
+      setRecordedText('');
+      setMicProcessing(false);
+    }
+  };
+
   const handleProcessMicSpeech = async () => {
-    if (!recordedText.trim()) {
-      setError('No speech text recorded. Please speak into the mic first.');
+    if (!recordedText.trim() || recordedText.startsWith('Listening...') || recordedText.startsWith('Processing audio')) {
+      setError('Please type or record some speech first.');
       return;
     }
 
@@ -208,10 +263,9 @@ export default function App() {
 
       const data = await res.json();
       if (!data.success) {
-        throw new Error(data.error || 'Failed to process microphone audio.');
+        throw new Error(data.error || 'Failed to process speech text.');
       }
 
-      // Add to dialogue lines!
       const newLine = {
         id: lines.length + 1,
         start: lines.length > 0 ? lines[lines.length - 1].end + 1 : 0,
@@ -236,14 +290,14 @@ export default function App() {
 
       setLines(prev => [...prev, newLine]);
       setRecordedText('');
-      
+
       confetti({
         particleCount: 50,
         spread: 60,
         origin: { y: 0.8 }
       });
     } catch (err) {
-      setError(err.message || 'Error transcribing mic speech.');
+      setError(err.message || 'Error processing speech.');
     } finally {
       setMicProcessing(false);
     }
