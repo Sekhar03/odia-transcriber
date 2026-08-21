@@ -148,7 +148,10 @@ export default function App() {
 
     rec.onerror = (event) => {
       console.error('Speech recognition error:', event.error);
-      if (event.error !== 'no-speech') {
+      if (event.error === 'network') {
+        setError('Notice: Live speech recognition is unavailable because your browser could not connect to its cloud recognition servers. You can type or paste your spoken text into the preview box below to analyze/translate.');
+        stopRecording();
+      } else if (event.error !== 'no-speech') {
         setError('Microphone error: ' + event.error);
         stopRecording();
       }
@@ -508,7 +511,7 @@ export default function App() {
         {/* Tabs */}
         <div className="flex border-b border-slate-800 pb-2 mb-2 gap-4">
           <button
-            onClick={() => setActiveTab('youtube')}
+            onClick={() => { setActiveTab('youtube'); setError(null); }}
             className={`pb-2 px-1 text-sm font-semibold transition ${
               activeTab === 'youtube' ? 'border-b-2 border-teal-500 text-teal-400' : 'text-slate-400 hover:text-slate-200'
             }`}
@@ -516,7 +519,7 @@ export default function App() {
             YouTube Transcribe
           </button>
           <button
-            onClick={() => setActiveTab('mic')}
+            onClick={() => { setActiveTab('mic'); setError(null); }}
             className={`pb-2 px-1 text-sm font-semibold transition ${
               activeTab === 'mic' ? 'border-b-2 border-teal-500 text-teal-400' : 'text-slate-400 hover:text-slate-200'
             }`}
