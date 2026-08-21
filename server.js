@@ -95,7 +95,8 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-const { processContent } = require('./services/aiCleanerService');
+const { processContent, processMicSpeech } = require('./services/aiCleanerService');
+
 
 // API: Transcribe YouTube Video to Odia or English
 app.post('/api/transcribe', transcribeLimiter, async (req, res) => {
@@ -196,6 +197,25 @@ app.post('/api/translate-text', async (req, res) => {
     return res.status(500).json({ success: false, error: 'Translation failed. Please try again.' });
   }
 });
+
+// API: Transcribe and Clean Microphone speech
+app.post('/api/transcribe-mic', async (req, res) => {
+  try {
+    const { text, sourceLang = 'en-US', targetLang = 'or' } = req.body;
+    
+    // Input validation
+    if (!text || typeof text !== 'string') {
+      return res.status(400).json({ success: false, error: 'Speech text is required.' });
+    }
+    
+    const result = await processMicSpeech(text, sourceLang, targetLang);
+    return res.json({ success: true, ...result });
+  } catch (err) {
+    console.error('[API /api/transcribe-mic Error]', err.message);
+    return res.status(500).json({ success: false, error: 'Microphone speech transcription & translation failed.' });
+  }
+});
+
 
 // API: Generate & Download PDF (Odia or English)
 app.post('/api/generate-pdf', (req, res) => {

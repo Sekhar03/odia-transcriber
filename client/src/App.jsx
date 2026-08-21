@@ -18,7 +18,9 @@ import {
   Users,
   CheckCircle2,
   AlertCircle,
-  Globe
+  Globe,
+  Mic,
+  MicOff
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import './index.css';
@@ -103,8 +105,150 @@ export default function App() {
   const [summary, setSummary] = useState(null);
   const iframeRef = useRef(null);
 
+  // Microphone recording states
+  const [activeTab, setActiveTab] = useState('youtube'); // 'youtube' | 'mic'
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordedText, setRecordedText] = useState('');
+  const [recordingLang, setRecordingLang] = useState('en-US');
+  const [micProcessing, setMicProcessing] = useState(false);
+  const recognitionRef = useRef(null);
+
+  const startRecording = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('Your browser does not support Speech Recognition. Please try Google Chrome or MS Edge.');
+      return;
+    }
+
+    const rec = new SpeechRecognition();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = recordingLang;
+
+    rec.onstart = () => {
+      setIsRecording(true);
+      setRecordedText('');
+      setError(null);
+    };
+
+    rec.onresult = (event) => {
+      let interimTranscript = '';
+      let finalTranscript = '';
+
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript;
+        } else {
+          interimTranscript += event.results[i][0].transcript;
+        }
+      }
+
+      setRecordedText(finalTranscript || interimTranscript);
+    };
+
+    rec.onerror = (event) => {
+      console.error('Speech recognition error:', event.error);
+      if (event.error !== 'no-speech') {
+        setError('Microphone error: ' + event.error);
+        stopRecording();
+      }
+    };
+
+    rec.onend = () => {
+      setIsRecording(false);
+    };
+
+    recognitionRef.current = rec;
+    rec.start();
+  };
+
+  const stopRecording = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+    }
+    setIsRecording(false);
+  };
+
+  const formatTime = (seconds) => {
+    const hrs = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    const padMins = String(mins).padStart(2, '0');
+    const padSecs = String(secs).padStart(2, '0');
+
+    if (hrs > 0) {
+      const padHrs = String(hrs).padStart(2, '0');
+      return `${padHrs}:${padMins}:${padSecs}`;
+    }
+    return `${padMins}:${padSecs}`;
+  };
+
+  const handleProcessMicSpeech = async () => {
+    if (!recordedText.trim()) {
+      setError('No speech text recorded. Please speak into the mic first.');
+      return;
+    }
+
+    setMicProcessing(true);
+    setError(null);
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/transcribe-mic`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: recordedText,
+          sourceLang: recordingLang,
+          targetLang
+        })
+      });
+
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to process microphone audio.');
+      }
+
+      // Add to dialogue lines!
+      const newLine = {
+        id: lines.length + 1,
+        start: lines.length > 0 ? lines[lines.length - 1].end + 1 : 0,
+        end: lines.length > 0 ? lines[lines.length - 1].end + 5 : 4,
+        startFormatted: formatTime(lines.length > 0 ? lines[lines.length - 1].end + 1 : 0),
+        endFormatted: formatTime(lines.length > 0 ? lines[lines.length - 1].end + 5 : 4),
+        speaker: 'Mic Speaker',
+        text: data.cleanedText,
+        odiaText: data.translatedText,
+        translatedText: data.translatedText
+      };
+
+      if (!metadata) {
+        setMetadata({
+          title: 'Microphone & Live Speech Transcription',
+          author: 'Live Recording',
+          durationFormatted: 'N/A',
+          videoId: ''
+        });
+        setSourceLanguage(recordingLang.split('-')[0].toUpperCase());
+      }
+
+      setLines(prev => [...prev, newLine]);
+      setRecordedText('');
+      
+      confetti({
+        particleCount: 50,
+        spread: 60,
+        origin: { y: 0.8 }
+      });
+    } catch (err) {
+      setError(err.message || 'Error transcribing mic speech.');
+    } finally {
+      setMicProcessing(false);
+    }
+  };
+
   const isCloudDeploy = typeof window !== 'undefined'
     && window.location.hostname.includes('vercel.app');
+
 
 
 
@@ -361,68 +505,174 @@ export default function App() {
 
       {/* Input Section */}
       <section className="glass-panel p-6 flex flex-col gap-4">
-        <label className="text-sm font-semibold text-slate-300 flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-teal-400" />
-          Paste YouTube Video URL:
-        </label>
-
-        <div className="flex flex-col md:flex-row gap-3">
-          <div className="relative flex-1">
-            <input
-              type="text"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="e.g. https://www.youtube.com/watch?v=..."
-              className="w-full bg-slate-900/80 border border-slate-700 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 rounded-xl py-3.5 px-4 text-slate-100 placeholder-slate-500 outline-none transition"
-              onKeyDown={(e) => e.key === 'Enter' && handleTranscribe()}
-            />
-            {url && (
-              <button
-                onClick={() => setUrl('')}
-                className="absolute right-3 top-3.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-400 px-2 py-1 rounded"
-              >
-                Clear
-              </button>
-            )}
-          </div>
-
+        {/* Tabs */}
+        <div className="flex border-b border-slate-800 pb-2 mb-2 gap-4">
           <button
-            onClick={() => handleTranscribe()}
-            disabled={loading}
-            className="glow-btn px-6 py-3.5 flex items-center justify-center gap-2 text-base"
+            onClick={() => setActiveTab('youtube')}
+            className={`pb-2 px-1 text-sm font-semibold transition ${
+              activeTab === 'youtube' ? 'border-b-2 border-teal-500 text-teal-400' : 'text-slate-400 hover:text-slate-200'
+            }`}
           >
-            {loading ? (
-              <>
-                <RefreshCw className="w-5 h-5 animate-spin" />
-                <span>Processing Pipeline...</span>
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-5 h-5" />
-                <span>Transcribe ({LANG_NAMES[targetLang] || 'Odia'})</span>
-              </>
-            )}
+            YouTube Transcribe
+          </button>
+          <button
+            onClick={() => setActiveTab('mic')}
+            className={`pb-2 px-1 text-sm font-semibold transition ${
+              activeTab === 'mic' ? 'border-b-2 border-teal-500 text-teal-400' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            Microphone Live Speech
           </button>
         </div>
 
-        {/* Sample Quick Links */}
-        <div className="flex flex-wrap items-center gap-2 pt-2 text-xs text-slate-400">
-          <span className="font-semibold text-slate-300">Try Sample Videos:</span>
-          {SAMPLE_VIDEOS.map((sample, idx) => (
-            <button
-              key={idx}
-              onClick={() => handleSampleClick(sample.url)}
-              disabled={loading}
-              className="bg-slate-800/80 hover:bg-slate-700 border border-slate-700 hover:border-teal-500/40 text-slate-300 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition"
-            >
-              <YoutubeIcon className="w-3.5 h-3.5 text-red-400" />
-              <span>{sample.name}</span>
-              <span className="text-[10px] bg-slate-900 px-1.5 py-0.5 rounded text-teal-400 font-mono">
-                {sample.lang}
-              </span>
-            </button>
-          ))}
-        </div>
+        {activeTab === 'youtube' ? (
+          <>
+            <label className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-teal-400" />
+              Paste YouTube Video URL:
+            </label>
+
+            <div className="flex flex-col md:flex-row gap-3">
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder="e.g. https://www.youtube.com/watch?v=..."
+                  className="w-full bg-slate-900/80 border border-slate-700 focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 rounded-xl py-3.5 px-4 text-slate-100 placeholder-slate-500 outline-none transition"
+                  onKeyDown={(e) => e.key === 'Enter' && handleTranscribe()}
+                />
+                {url && (
+                  <button
+                    onClick={() => setUrl('')}
+                    className="absolute right-3 top-3.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-400 px-2 py-1 rounded"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+
+              <button
+                onClick={() => handleTranscribe()}
+                disabled={loading}
+                className="glow-btn px-6 py-3.5 flex items-center justify-center gap-2 text-base"
+              >
+                {loading ? (
+                  <>
+                    <RefreshCw className="w-5 h-5 animate-spin" />
+                    <span>Processing Pipeline...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-5 h-5" />
+                    <span>Transcribe ({LANG_NAMES[targetLang] || 'Odia'})</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Sample Quick Links */}
+            <div className="flex flex-wrap items-center gap-2 pt-2 text-xs text-slate-400">
+              <span className="font-semibold text-slate-300">Try Sample Videos:</span>
+              {SAMPLE_VIDEOS.map((sample, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => handleSampleClick(sample.url)}
+                  disabled={loading}
+                  className="bg-slate-800/80 hover:bg-slate-700 border border-slate-700 hover:border-teal-500/40 text-slate-300 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition"
+                >
+                  <YoutubeIcon className="w-3.5 h-3.5 text-red-400" />
+                  <span>{sample.name}</span>
+                  <span className="text-[10px] bg-slate-900 px-1.5 py-0.5 rounded text-teal-400 font-mono">
+                    {sample.lang}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-slate-900/60 p-4 rounded-xl border border-slate-800/80">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+                  <Mic className="w-4 h-4 text-teal-400" />
+                  Speak into your microphone:
+                </label>
+                <p className="text-xs text-slate-400">
+                  Select your spoken language. The AI will correct muffled/unclear accents, grammatical speech slips, and translate.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400">Spoken Language:</span>
+                <select
+                  value={recordingLang}
+                  onChange={(e) => setRecordingLang(e.target.value)}
+                  className="bg-slate-950 text-slate-200 text-xs font-bold px-3 py-2 rounded-lg border border-slate-800 focus:outline-none focus:border-teal-500 cursor-pointer"
+                >
+                  <option value="en-US">English (US)</option>
+                  <option value="en-IN">English (India)</option>
+                  <option value="hi-IN">Hindi (हिन्दी)</option>
+                  <option value="or-IN">Odia (ଓଡ଼ିଆ)</option>
+                  <option value="bn-IN">Bengali (বাংলা)</option>
+                  <option value="te-IN">Telugu (తెలుగు)</option>
+                  <option value="ta-IN">Tamil (தமிழ்)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button
+                onClick={isRecording ? stopRecording : startRecording}
+                disabled={micProcessing}
+                className={`px-6 py-4 flex items-center justify-center gap-3 text-base rounded-xl font-bold transition flex-1 shadow-lg ${
+                  isRecording
+                    ? 'bg-red-600 hover:bg-red-500 text-white animate-pulse'
+                    : 'bg-teal-600 hover:bg-teal-500 text-white'
+                }`}
+              >
+                {isRecording ? (
+                  <>
+                    <MicOff className="w-5 h-5" />
+                    <span>Stop Recording</span>
+                  </>
+                ) : (
+                  <>
+                    <Mic className="w-5 h-5" />
+                    <span>Start Recording</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                onClick={handleProcessMicSpeech}
+                disabled={isRecording || micProcessing || !recordedText.trim()}
+                className="glow-btn px-6 py-4 flex items-center justify-center gap-2 text-base font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {micProcessing ? (
+                  <>
+                    <RefreshCw className="w-5 h-5 animate-spin" />
+                    <span>AI Analyzing & Translating...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-5 h-5" />
+                    <span>Analyze & Translate to {LANG_NAMES[targetLang] || 'Odia'}</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Live Transcript Preview */}
+            <div className="bg-slate-900/40 border border-slate-800 p-4 rounded-xl">
+              <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Live Transcription Preview (Speak now):</span>
+              <div className="text-sm text-slate-300 min-h-[50px] font-mono whitespace-pre-wrap italic">
+                {recordedText || (isRecording ? 'Listening for speech...' : 'Click "Start Recording" and speak. Your speech will show up here in real-time.')}
+              </div>
+            </div>
+          </div>
+        )}
+
 
         {/* Processing Pipeline Checklist */}
         {loading && (
