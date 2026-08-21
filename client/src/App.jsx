@@ -113,6 +113,64 @@ export default function App() {
   const [micProcessing, setMicProcessing] = useState(false);
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
+  const canvasRef = useRef(null);
+  const animationFrameRef = useRef(null);
+  const audioContextRef = useRef(null);
+  const analyserRef = useRef(null);
+
+  const startVisualizer = (stream) => {
+    try {
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const analyser = audioContext.createAnalyser();
+      const source = audioContext.createMediaStreamSource(stream);
+      source.connect(analyser);
+      analyser.fftSize = 64;
+
+      audioContextRef.current = audioContext;
+      analyserRef.current = analyser;
+
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+
+      const draw = () => {
+        if (!canvasRef.current) {
+          animationFrameRef.current = requestAnimationFrame(draw);
+          return;
+        }
+
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        animationFrameRef.current = requestAnimationFrame(draw);
+
+        analyser.getByteFrequencyData(dataArray);
+
+        ctx.fillStyle = '#0f172a'; // Slate-900 background matching theme
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        const barWidth = (canvas.width / bufferLength) * 1.5;
+        let barHeight;
+        let x = 0;
+
+        for (let i = 0; i < bufferLength; i++) {
+          barHeight = dataArray[i] * 0.6;
+
+          const gradient = ctx.createLinearGradient(0, canvas.height, 0, 0);
+          gradient.addColorStop(0, '#0d9488'); // teal-600
+          gradient.addColorStop(1, '#10b981'); // emerald-500
+
+          ctx.fillStyle = gradient;
+          const y = (canvas.height - barHeight) / 2;
+          ctx.fillRect(x, y, barWidth - 2, barHeight);
+
+          x += barWidth;
+        }
+      };
+
+      draw();
+    } catch (e) {
+      console.error('Failed to start audio visualizer:', e);
+    }
+  };
 
   const startRecording = async () => {
     try {
@@ -143,6 +201,9 @@ export default function App() {
       setIsRecording(true);
       setError(null);
       setRecordedText('Listening... speak now and click Stop when done.');
+
+      // Start real-time speaking graph visualizer
+      startVisualizer(stream);
     } catch (err) {
       console.error('Failed to start recording:', err);
       setError('Could not access microphone. Please check your browser/system microphone permissions.');
@@ -153,6 +214,12 @@ export default function App() {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
+    }
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {});
     }
   };
 
@@ -719,6 +786,22 @@ export default function App() {
                 )}
               </button>
             </div>
+
+            {/* Audio Visualizer Speaking Graph */}
+            {isRecording && (
+              <div className="flex flex-col items-center justify-center bg-slate-950/80 p-4 rounded-xl border border-teal-500/20">
+                <span className="text-[10px] uppercase font-bold text-teal-400 mb-2 animate-pulse flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-red-500 animate-ping"></span>
+                  Speaking Graph (Audio Waveform)
+                </span>
+                <canvas
+                  ref={canvasRef}
+                  width="500"
+                  height="70"
+                  className="w-full h-16 bg-slate-900 rounded-lg"
+                />
+              </div>
+            )}
 
             {/* Live Transcript Preview */}
             <div className="bg-slate-900/40 border border-slate-800 p-4 rounded-xl">
