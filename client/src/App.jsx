@@ -665,10 +665,15 @@ export default function App() {
 
             {/* Live Transcript Preview */}
             <div className="bg-slate-900/40 border border-slate-800 p-4 rounded-xl">
-              <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Live Transcription Preview (Speak now):</span>
-              <div className="text-sm text-slate-300 min-h-[50px] font-mono whitespace-pre-wrap italic">
-                {recordedText || (isRecording ? 'Listening for speech...' : 'Click "Start Recording" and speak. Your speech will show up here in real-time.')}
-              </div>
+              <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1">
+                Live Transcription Preview (Edit or Speak):
+              </span>
+              <textarea
+                value={recordedText}
+                onChange={(e) => setRecordedText(e.target.value)}
+                placeholder={isRecording ? 'Listening for speech...' : 'Click "Start Recording" and speak, or type/paste your text here directly.'}
+                className="w-full bg-slate-950/60 border border-slate-800/80 rounded-lg p-2.5 text-sm text-slate-300 min-h-[100px] outline-none focus:border-teal-500/50 resize-y font-mono italic"
+              />
             </div>
           </div>
         )}
